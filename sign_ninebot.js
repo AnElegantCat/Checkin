@@ -75,7 +75,8 @@ class NineBot {
         this.endpoints = {
             sign:         "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/sign",
             status:       "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/status",
-            blindBoxInfo: "https://cn-cbu-gateway.ninebot.com/app-api/blind-box/v1/milestone-info",
+            milestoneList: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v1/milestone/list",
+            milestoneClaim: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v1/milestone/claim",
         };
 
         // 请求配置：重试 3 次，每次递增等待
@@ -178,44 +179,73 @@ class NineBot {
 
 
     // ══════════════════════════════════════════════
-    // 4. 盲盒里程碑检查（移植自参考项目）
+    // 4. 签到里程碑领取（连续签到奖励）
     // ══════════════════════════════════════════════
-    async checkBlindBox() {
-        console.log(`[${this.name}] 检查盲盒里程碑...`);
-        this.addLog("=== 盲盒里程碑 ===", "");
+    async checkMilestone() {
+        console.log(`[${this.name}] 检查签到里程碑...`);
+        this.addLog("=== 签到里程碑 ===", "");
 
         try {
-            const data = await this.makeRequest("get", this.endpoints.blindBoxInfo, null, this.headersV2);
+            // 获取里程碑列表
+            const listData = await this.makeRequest("get", this.endpoints.milestoneList, null, this.headers);
 
-            if (data.code !== 0) {
-                const msg = data.msg || "获取失败";
-                console.warn(`[${this.name}] 盲盒信息获取失败: ${msg}`);
-                this.addLog("盲盒信息", `❌ ${msg}`);
+            if (listData.code !== 0) {
+                const msg = listData.msg || "获取失败";
+                console.warn(`[${this.name}] 里程碑列表获取失败: ${msg}`);
+                this.addLog("里程碑", `❌ ${msg}`);
                 return;
             }
 
-            const info = data.data || {};
-            // 当前积分
-            const currentPoints = info.currentPoints ?? info.points ?? "未知";
-            // 下一里程碑所需积分
-            const nextMilestone = info.nextMilestonePoints ?? info.nextPoints ?? "未知";
-            // 可兑换数量
-            const exchangeable = info.exchangeableCount ?? info.canExchangeCount ?? 0;
-
-            this.addLog("盲盒积分", `${currentPoints} 分`);
-            this.addLog("下一里程碑", `${nextMilestone} 分`);
-
-            if (exchangeable > 0) {
-                this.addLog("盲盒兑换", `🎁 可兑换 ${exchangeable} 个`);
-                console.log(`[${this.name}] 盲盒可兑换: ${exchangeable} 个`);
-            } else {
-                this.addLog("盲盒兑换", "暂无可兑换");
+            const milestones = listData.data?.list || [];
+            if (milestones.length === 0) {
+                this.addLog("里程碑", "暂无里程碑任务");
+                return;
             }
+
+            // 显示所有里程碑状态
+            let claimableCount = 0;
+            for (const item of milestones) {
+                const status = item.status === 1 ? "✅ 已领取" : item.status === 2 ? "🎁 可领取" : `⏳ 还差${item.remainingDays}天`;
+                this.addLog(`${item.days}天奖励`, `${item.rewardName || '未知奖励'} - ${status}`);
+                if (item.status === 2) claimableCount++;
+            }
+
+            // 领取可领取的奖励
+            if (claimableCount === 0) {
+                this.addLog("里程碑领取", "暂无可领取奖励");
+                return;
+            }
+
+            let claimedCount = 0;
+            for (const item of milestones) {
+                if (item.status !== 2) continue;
+
+                try {
+                    const claimData = await this.makeRequest(
+                        "post",
+                        this.endpoints.milestoneClaim,
+                        { milestoneId: item.milestoneId },
+                        this.headers
+                    );
+
+                    if (claimData.code === 0) {
+                        console.log(`[${this.name}] ${item.days}天里程碑奖励领取成功: ${item.rewardName}`);
+                        claimedCount++;
+                    } else {
+                        console.warn(`[${this.name}] ${item.days}天里程碑领取失败: ${claimData.msg}`);
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                } catch (e) {
+                    console.warn(`[${this.name}] 领取${item.days}天奖励异常: ${this.getErrorMessage(e)}`);
+                }
+            }
+
+            this.addLog("里程碑领取", `✅ 成功领取 ${claimedCount}/${claimableCount} 个奖励`);
 
         } catch (error) {
             const msg = this.getErrorMessage(error);
-            console.error(`[${this.name}] 盲盒检查异常: ${msg}`);
-            this.addLog("盲盒检查", `❌ 异常: ${msg}`);
+            console.error(`[${this.name}] 里程碑检查异常: ${msg}`);
+            this.addLog("里程碑检查", `❌ 异常: ${msg}`);
         }
     }
 
@@ -259,8 +289,8 @@ class NineBot {
                 console.log(`[${this.name}] 今日已签到，跳过`);
             }
 
-            // ── 阶段二：盲盒里程碑检查 ──────────────────
-            await this.checkBlindBox();
+            // ── 阶段二：签到里程碑检查 ──────────────────
+            await this.checkMilestone();
 
         } catch (error) {
             this.addLog("执行结果", `执行异常: ${error.message}`);
