@@ -75,9 +75,6 @@ class NineBot {
         this.endpoints = {
             sign:         "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/sign",
             status:       "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/status",
-            shareList:    "https://cn-cbu-gateway.ninebot.com/app-api/circle/v1/task-list",
-            shareCallback:"https://cn-cbu-gateway.ninebot.com/app-api/circle/v1/share-callback",
-            shareReward:  "https://cn-cbu-gateway.ninebot.com/app-api/circle/v1/receive-task-reward",
             blindBoxInfo: "https://cn-cbu-gateway.ninebot.com/app-api/blind-box/v1/milestone-info",
         };
 
@@ -178,84 +175,7 @@ class NineBot {
         }
     }
 
-    // ══════════════════════════════════════════════
-    // 3. 分享任务 & 领取奖励（移植自参考项目）
-    // ══════════════════════════════════════════════
-    async doShareAndCollectReward() {
-        console.log(`[${this.name}] 开始执行分享任务...`);
-        this.addLog("=== 分享任务 ===", "");
 
-        try {
-            // 步骤一：执行分享回调
-            const sharePayload = {
-                k: "mx0Zdjf6ayfjFkX4rC9CHVZNOlorWSG0ZDEjpE+Raxq6v75m83DPHtUwy1VTpO4hBdjCDR/yIh+15IOSC0a1zKkuOILH/D/Z94K9bVc4wcqw4d46qt4WbDlITizRKZT6sS2N3OzwHMUIKbm9Kitk4CnTqvsY4y3LTbyp1bM6X1E=",
-                p: 101,
-                d: "xj6QFv+/qPlSnjGEqdPHrjlcX5mN4cJafdDmoMigAxtLUodCbc9daapDU7PdjDuHxerEadqjugf2NWknfrzx+rN14Zt1dNv0k8f3//90HPyRRcKZ44wj7ZVnZFHRHj6xCnZrU/bI6h6ruQZ7s4JQNqviIiBs4rZ95u8618+K/V7KRYyl6k55nz45/EzgOQC4ZTXksA0YoaI2kNlz6IQqwk1SsyVGBOCjlv0o4ud1hrM4sjQJjG6ZatIhDuTmfuN+s+hJhXNK+7NXOOsEtXgYGLtF5c47XkJ6njAOlfzOSgO5qyxPyU55s+9zNVeJryt8We0sbA0ryP7u7DTnxH/Khb1tpRcAl3wsQnr0rC9mO+rx8tAsu6kPNBj+ezEkoiHPCSvg3gh6aj+Ib1rUtjW5+1Or9a5DnDLWoa8+atT07TEWqUbeDeaHIntC1T7tcZDKQKFkbZQdAkRryuCpw5XVmj6uGOBVzyW+YQ+4VKn/03f4u3xXRw1BWKgdER86/ZFyGSdmPIoeWAK8zqx6HGG59AWpKYLpAhVPlAQRN4ckpdeyYWL3WlEOifnDCIN+VO4GA5xbxB5wYOFBYjm7wMfqG+J1Jt9ZVh+Mi/NEhuq3caM+2vGEo+hHNXTyaMZtcytKY/uWQvsCX3muCaL8xteLZJHsawdYXd1UIIUfCh+uyIWWz6jUDcVzUQuitgyC9+0S8dMJGqskJ+bLhW/kGF2Gsv2vRqHuoULSaszB8QFilr6SdaF6ew+FWbpN8iShl5YzLpfBBQ+1j9xFkF5wMX+DdTRcuFIJ58hjWfp/MnWdcICKBTRmdJ4Uz2rjHgjEsw2qA06cA4tP2wZmANzm0fSX2s9Smogt3ULE9MjAevOQ+pqimHzHPT6dpvONVLnNTclZAGdSWl8YQpwzlt2iRdMfErWufGBqG6PfkTvpAdu4wKVhB+uvLHuC6fxUSioZ3OSLdwJqvirmx8x6Glo1OkQose7Qi6sdRRU0RL/ChttxwnaUkoWj1ASTLuwIbYMUn6RXtaBhR159mVU0zesfmK8wYkomNQH4KxVGoC+wQOcxaFIE7YU46pt4jXKORupDDlHRcoiyKLVhP+dGt2Av7C1zptG9+pMfXxOY1IFV/3/TfCgNzorl8geVaFrVfuZVac560AWU+ctjp0mvG8Htbfen25Z/zi4Kh8R4VFCU1hkqntVqMQouJMqr/g8C2+6OfJA5OL3pldQQpjWK3gfmLWzD",
-            };
-
-            // 分享回调使用 text/html Content-Type
-            const shareHeaders = { ...this.headersV2, "Content-Type": "text/html" };
-            const shareResult = await this.makeRequest("post", this.endpoints.shareCallback, sharePayload, shareHeaders);
-
-            if (shareResult.code === 0) {
-                console.log(`[${this.name}] 分享回调成功`);
-                this.addLog("分享回调", "✅ 成功");
-            } else {
-                const msg = shareResult.msg || "未知错误";
-                console.warn(`[${this.name}] 分享回调失败: ${msg}`);
-                this.addLog("分享回调", `❌ ${msg}`);
-                // 分享失败时跳过领奖，但不中断后续任务
-                return;
-            }
-
-            // 步骤二：查询可领取的任务奖励列表
-            await new Promise(r => setTimeout(r, 2000)); // 等待服务端处理
-            const taskListResult = await this.makeRequest("get", this.endpoints.shareList, null, this.headersV2);
-
-            if (taskListResult.code !== 0) {
-                console.warn(`[${this.name}] 获取任务列表失败: ${taskListResult.msg}`);
-                this.addLog("任务列表", `❌ ${taskListResult.msg || "获取失败"}`);
-                return;
-            }
-
-            const tasks = taskListResult.data?.list || [];
-            const claimableTasks = tasks.filter(t => t.status === 2); // status=2 表示可领取
-
-            if (claimableTasks.length === 0) {
-                console.log(`[${this.name}] 暂无可领取的任务奖励`);
-                this.addLog("任务奖励", "暂无可领取");
-                return;
-            }
-
-            // 步骤三：逐个领取奖励
-            let claimedCount = 0;
-            for (const task of claimableTasks) {
-                try {
-                    const rewardResult = await this.makeRequest(
-                        "post",
-                        this.endpoints.shareReward,
-                        { taskId: task.taskId },
-                        this.headersV2
-                    );
-                    if (rewardResult.code === 0) {
-                        console.log(`[${this.name}] 任务「${task.taskName || task.taskId}」奖励领取成功`);
-                        claimedCount++;
-                    } else {
-                        console.warn(`[${this.name}] 任务「${task.taskName || task.taskId}」领取失败: ${rewardResult.msg}`);
-                    }
-                    await new Promise(r => setTimeout(r, 1000)); // 避免请求过快
-                } catch (e) {
-                    console.warn(`[${this.name}] 领取奖励异常: ${this.getErrorMessage(e)}`);
-                }
-            }
-
-            this.addLog("领取奖励", `✅ ${claimedCount}/${claimableTasks.length} 个任务奖励领取成功`);
-        } catch (error) {
-            const msg = this.getErrorMessage(error);
-            console.error(`[${this.name}] 分享任务执行异常: ${msg}`);
-            this.addLog("分享任务", `❌ 异常: ${msg}`);
-        }
-    }
 
     // ══════════════════════════════════════════════
     // 4. 盲盒里程碑检查（移植自参考项目）
@@ -339,10 +259,7 @@ class NineBot {
                 console.log(`[${this.name}] 今日已签到，跳过`);
             }
 
-            // ── 阶段二：分享任务 & 领奖励 ──────────────
-            await this.doShareAndCollectReward();
-
-            // ── 阶段三：盲盒里程碑检查 ──────────────────
+            // ── 阶段二：盲盒里程碑检查 ──────────────────
             await this.checkBlindBox();
 
         } catch (error) {
