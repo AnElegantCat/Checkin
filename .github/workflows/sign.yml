@@ -1,0 +1,41 @@
+name: 九号出行自动签到
+
+on:
+  schedule:
+    # 每天北京时间 07:00 运行 (UTC 23:00)
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+    # 支持手动触发
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 设置 Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: 安装依赖
+      run: npm install
+      
+    - name: 运行签到
+      env:
+        NINEBOT_DEVICE_ID: ${{ secrets.NINEBOT_DEVICE_ID }}
+        NINEBOT_AUTHORIZATION: ${{ secrets.NINEBOT_AUTHORIZATION }}
+        NINEBOT_NAME: ${{ secrets.NINEBOT_NAME }}
+        NINEBOT_ACCOUNTS: ${{ secrets.NINEBOT_ACCOUNTS }}
+        BARK_KEY: ${{ secrets.BARK_KEY }}
+        BARK_URL: ${{ secrets.BARK_URL }}
+        BARK_GROUP: ${{ secrets.BARK_GROUP }}
+        BARK_ICON: ${{ secrets.BARK_ICON }}
+        BARK_SOUND: ${{ secrets.BARK_SOUND }}
+        BARK_URL_JUMP: ${{ secrets.BARK_URL_JUMP }}
+        BARK_AUTO_COPY: ${{ secrets.BARK_AUTO_COPY }}
+        BARK_COPY: ${{ secrets.BARK_COPY }}
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      run: node sign_ninebot.js
