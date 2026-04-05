@@ -58,19 +58,6 @@ class NineBot {
             Referer: "https://h5-bj.ninebot.com/",
         };
 
-        // 分享任务 & 盲盒专用 Headers（Access-Token 格式）
-        this.headersV2 = {
-            Host: "cn-cbu-gateway.ninebot.com",
-            "User-Agent": "Ninebot/6.10.1 (cn.ninebot.segway; build:3676; iOS 26.3.1) Alamofire/5.6.1",
-            "Access-Token": authorization,
-            "Device-Id": deviceId,
-            "Content-Type": "application/json",
-            Platform: "iOS",
-            Language: "zh",
-            "App-Version": "610013676",
-            Accept: "application/json",
-        };
-
         // API 端点
         this.endpoints = {
             sign:         "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/sign",
