@@ -108,6 +108,9 @@ class NineBot {
         this.deviceId = deviceId;
         this.authorization = authorization;
         this.logs = [];
+        this.consecutiveDays = 0;
+        this.isSignedToday = false;
+        this.signSuccess = false;
         
         // 创建 axios 实例
         this.client = axios.create({
@@ -237,18 +240,20 @@ class NineBot {
         }
         
         const status = statusResult.data;
-        const isSignedToday = status.currentSignStatus === 1;
+        this.isSignedToday = status.currentSignStatus === 1;
+        this.consecutiveDays = status.consecutiveDays || 0;
         
-        this.addLog("连续签到", `${status.consecutiveDays || 0} 天`);
-        this.addLog("今日状态", isSignedToday ? "✅ 已签到" : "⏳ 未签到");
+        this.addLog("连续签到", `${this.consecutiveDays} 天`);
+        this.addLog("今日状态", this.isSignedToday ? "✅ 已签到" : "⏳ 未签到");
         
-        log("INFO", `[${this.name}] 连续签到: ${status.consecutiveDays || 0} 天，今日: ${isSignedToday ? "已签到" : "未签到"}`);
+        log("INFO", `[${this.name}] 连续签到: ${this.consecutiveDays} 天，今日: ${this.isSignedToday ? "已签到" : "未签到"}`);
         
         // 2. 执行签到（如果未签到）
-        if (!isSignedToday) {
+        if (!this.isSignedToday) {
             const signResult = await this.doSign();
             
             if (signResult.success) {
+                this.signSuccess = true;
                 this.addLog("签到结果", "✅ 成功");
                 log("INFO", `[${this.name}] 签到成功`);
                 
@@ -256,7 +261,8 @@ class NineBot {
                 await sleep(1000);
                 const newStatus = await this.getStatus();
                 if (newStatus.success) {
-                    this.addLog("连续签到", `${newStatus.data.consecutiveDays || status.consecutiveDays} 天`);
+                    this.consecutiveDays = newStatus.data.consecutiveDays || this.consecutiveDays;
+                    this.addLog("连续签到", `${this.consecutiveDays} 天`);
                 }
             } else {
                 this.addLog("签到结果", `❌ ${signResult.error}`);
@@ -264,6 +270,7 @@ class NineBot {
                 return false;
             }
         } else {
+            this.signSuccess = true;
             log("INFO", `[${this.name}] 今日已签到，跳过`);
         }
         
@@ -372,7 +379,13 @@ async function init() {
         for (const acc of accounts) {
             const bot = new NineBot(acc.deviceId, acc.authorization, acc.name);
             const success = await bot.run();
-            results.push({ name: acc.name, logs: bot.logText, success });
+            results.push({ 
+                name: acc.name, 
+                success, 
+                consecutiveDays: bot.consecutiveDays,
+                isSignedToday: bot.isSignedToday,
+                signSuccess: bot.signSuccess
+            });
             if (success) successCount++;
             
             // 账号间延迟，避免请求过快
@@ -381,16 +394,21 @@ async function init() {
             }
         }
         
-        // 汇总结果
-        const title = `九号出行签到 - ${successCount}/${accounts.length} 成功`;
-        const message = results.map(r => 
-            `📱 ${r.name} ${r.success ? "✅" : "❌"}\n${r.logs.split("\n").map(l => `  ${l}`).join("\n")}`
-        ).join("\n\n");
+        // 构建简洁的推送消息
+        const now = new Date();
+        const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        
+        const title = "九号出行签到结果";
+        const message = results.map(r => {
+            const statusEmoji = r.signSuccess ? "🎉" : "❌";
+            const statusText = r.isSignedToday ? "已签到" : (r.signSuccess ? "签到成功" : "签到失败");
+            return `✅ ${r.name}\n连续签到天数: ${r.consecutiveDays}天\n今日签到状态: ${statusText}${statusEmoji}\n签到结果: ${statusText}${statusEmoji}${statusEmoji}`;
+        }).join("\n\n");
         
         log("INFO", `${"-".repeat(40)}\n汇总: ${successCount}/${accounts.length} 成功\n${"-".repeat(40)}`);
         
         // 发送推送
-        await PushNotifier.send(title, message);
+        await PushNotifier.send(title, `${accounts[0]?.name || '用户'} ${timeStr}\n\n${message}`);
         
         // 如果有失败，返回非零退出码
         if (successCount < accounts.length) {
