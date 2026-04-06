@@ -1,207 +1,389 @@
 import axios from "axios";
-import moment from "moment";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
+import { dirname, join } from "path";
+import { existsSync, appendFileSync, mkdirSync } from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: `${__dirname}/.env` });
+dotenv.config({ path: join(__dirname, ".env") });
 
-// 环境变量校验
-function checkSecrets() {
-    const required = [];
-    if (!process.env.NINEBOT_ACCOUNTS) {
-        if (!process.env.NINEBOT_DEVICE_ID) required.push("NINEBOT_DEVICE_ID");
-        if (!process.env.NINEBOT_AUTHORIZATION) required.push("NINEBOT_AUTHORIZATION");
-    }
-    if (required.length > 0) {
-        console.error(`[启动校验] ❌ 缺少环境变量: ${required.join(", ")}`);
-        process.exit(1);
-    }
-    console.log("[启动校验] ✅ 环境变量校验通过");
+// ==================== 配置 ====================
+const CONFIG = {
+    MAX_RETRIES: 3,
+    BASE_DELAY: 2000,
+    REQUEST_TIMEOUT: 20000,
+    LOG_DIR: join(__dirname, "logs"),
+    LOG_FILE: join(__dirname, "logs", `sign_${formatDate(new Date())}.log`),
+};
+
+// ==================== 工具函数 ====================
+function formatDate(date, format = "YYYY-MM-DD") {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hour = String(d.getHours()).padStart(2, "0");
+    const minute = String(d.getMinutes()).padStart(2, "0");
+    const second = String(d.getSeconds()).padStart(2, "0");
+    
+    return format
+        .replace("YYYY", year)
+        .replace("MM", month)
+        .replace("DD", day)
+        .replace("HH", hour)
+        .replace("mm", minute)
+        .replace("ss", second);
 }
 
-// 核心类
+function now() {
+    return formatDate(new Date(), "YYYY-MM-DD HH:mm:ss");
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 指数退避 + 抖动
+function getRetryDelay(attempt) {
+    const exponential = CONFIG.BASE_DELAY * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 1000;
+    return Math.min(exponential + jitter, 30000);
+}
+
+// 日志记录
+function log(level, message, data = null) {
+    const timestamp = now();
+    const prefix = `[${timestamp}] [${level}]`;
+    const logLine = data 
+        ? `${prefix} ${message} ${JSON.stringify(data)}`
+        : `${prefix} ${message}`;
+    
+    console.log(logLine);
+    
+    // 写入文件
+    try {
+        if (!existsSync(CONFIG.LOG_DIR)) {
+            mkdirSync(CONFIG.LOG_DIR, { recursive: true });
+        }
+        appendFileSync(CONFIG.LOG_FILE, logLine + "\n");
+    } catch (e) {
+        // 文件写入失败不影响主程序
+    }
+}
+
+// ==================== 环境校验 ====================
+function checkSecrets() {
+    const missing = [];
+    if (!process.env.NINEBOT_ACCOUNTS) {
+        if (!process.env.NINEBOT_DEVICE_ID) missing.push("NINEBOT_DEVICE_ID");
+        if (!process.env.NINEBOT_AUTHORIZATION) missing.push("NINEBOT_AUTHORIZATION");
+    }
+    
+    if (missing.length > 0) {
+        log("ERROR", `缺少环境变量: ${missing.join(", ")}`);
+        process.exit(1);
+    }
+    log("INFO", "环境变量校验通过");
+}
+
+// ==================== 核心类 ====================
 class NineBot {
     constructor(deviceId, authorization, name = "九号出行") {
-        this.msg = [];
         this.name = name;
         this.deviceId = deviceId;
         this.authorization = authorization;
-        this.headers = {
-            Accept: "application/json, text/plain, */*",
-            Authorization: authorization,
-            "Accept-Encoding": "gzip, deflate, br",
-            "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-            "Content-Type": "application/json",
-            Host: "cn-cbu-gateway.ninebot.com",
-            Origin: "https://h5-bj.ninebot.com",
-            from_platform_1: "1",
-            language: "zh",
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Segway v6 C 609033420",
-            Referer: "https://h5-bj.ninebot.com/",
-        };
+        this.logs = [];
+        
+        // 创建 axios 实例
+        this.client = axios.create({
+            timeout: CONFIG.REQUEST_TIMEOUT,
+            headers: {
+                Accept: "application/json, text/plain, */*",
+                Authorization: authorization,
+                "Accept-Encoding": "gzip, deflate, br",
+                "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+                "Content-Type": "application/json",
+                Host: "cn-cbu-gateway.ninebot.com",
+                Origin: "https://h5-bj.ninebot.com",
+                from_platform_1: "1",
+                language: "zh",
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Segway v6 C 609033420",
+                Referer: "https://h5-bj.ninebot.com/",
+            },
+        });
+        
+        // 响应拦截器 - 统一错误处理
+        this.client.interceptors.response.use(
+            response => response,
+            error => {
+                if (error.response) {
+                    const { status, data } = error.response;
+                    log("WARN", `HTTP ${status}`, { url: error.config?.url, data });
+                    
+                    // 401 可能是 token 过期
+                    if (status === 401) {
+                        throw new Error("授权已过期，请更新 authorization");
+                    }
+                } else if (error.request) {
+                    log("WARN", "网络请求无响应", { url: error.config?.url });
+                } else {
+                    log("WARN", "请求配置错误", { message: error.message });
+                }
+                throw error;
+            }
+        );
+        
         this.endpoints = {
             sign: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/sign",
             status: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/status",
         };
     }
 
-    async makeRequest(method, url, data = null) {
-        for (let attempt = 1; attempt <= 3; attempt++) {
+    addLog(name, value) {
+        this.logs.push({ name, value });
+    }
+
+    get logText() {
+        return this.logs.map(o => `${o.name}: ${o.value}`).join("\n");
+    }
+
+    // 带重试的请求
+    async requestWithRetry(method, url, data = null) {
+        let lastError;
+        
+        for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES; attempt++) {
             try {
-                console.log(`[${this.name}] 尝试 ${attempt}/3: ${method.toUpperCase()} ${url}`);
-                const response = await axios({ method, url, data, headers: this.headers, timeout: 15000 });
+                log("INFO", `[${this.name}] 请求 ${attempt}/${CONFIG.MAX_RETRIES}: ${method.toUpperCase()} ${url}`);
+                
+                const response = await this.client.request({
+                    method,
+                    url,
+                    data,
+                    params: method === "get" ? { t: Date.now() } : undefined,
+                });
+                
                 return response.data;
             } catch (error) {
-                console.warn(`[${this.name}] 请求失败 (${attempt}/3): ${error.message}`);
-                if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+                lastError = error;
+                const isLastAttempt = attempt === CONFIG.MAX_RETRIES;
+                
+                if (!isLastAttempt) {
+                    const delay = getRetryDelay(attempt);
+                    log("WARN", `[${this.name}] 请求失败，${delay}ms 后重试`, { error: error.message });
+                    await sleep(delay);
+                }
             }
         }
-        throw new Error("请求失败，已重试3次");
+        
+        throw new Error(`请求失败，已重试${CONFIG.MAX_RETRIES}次: ${lastError.message}`);
     }
 
-    addLog(name, value) {
-        this.msg.push({ name, value });
-    }
-
-    get logs() {
-        return this.msg.map(o => `${o.name}: ${o.value}`).join("\n");
-    }
-
-    // 验证登录 & 获取签到状态
-    async valid() {
+    // 获取签到状态
+    async getStatus() {
         try {
-            const data = await this.makeRequest("get", `${this.endpoints.status}?t=${moment().valueOf()}`);
-            if (data.code === 0) return [data.data, ""];
-            return [false, data.msg || "验证失败"];
+            const data = await this.requestWithRetry("get", this.endpoints.status);
+            
+            if (data.code === 0) {
+                return { success: true, data: data.data };
+            }
+            return { success: false, error: data.msg || "获取状态失败" };
         } catch (error) {
-            return [false, `验证异常: ${error.message}`];
+            return { success: false, error: error.message };
         }
     }
 
     // 执行签到
-    async sign() {
+    async doSign() {
         try {
-            const data = await this.makeRequest("post", this.endpoints.sign, { deviceId: this.deviceId });
-            if (data.code === 0) return true;
-            this.addLog("签到结果", `❌ ${data.msg || "未知错误"}`);
-            return false;
+            const data = await this.requestWithRetry("post", this.endpoints.sign, {
+                deviceId: this.deviceId,
+            });
+            
+            if (data.code === 0) {
+                return { success: true, data: data.data };
+            }
+            return { success: false, error: data.msg || "签到失败" };
         } catch (error) {
-            this.addLog("签到结果", `❌ 异常: ${error.message}`);
-            return false;
+            return { success: false, error: error.message };
         }
     }
 
     // 主流程
     async run() {
-        console.log(`\n[${this.name}] ▶ 开始签到`);
-        const [validData, errInfo] = await this.valid();
-
-        if (!validData) {
-            this.addLog("验证结果", errInfo || "登录验证失败");
-            return;
+        log("INFO", `${"=".repeat(40)}\n  账号: ${this.name}\n${"=".repeat(40)}`);
+        
+        // 1. 获取当前状态
+        const statusResult = await this.getStatus();
+        
+        if (!statusResult.success) {
+            this.addLog("验证结果", `❌ ${statusResult.error}`);
+            log("ERROR", `[${this.name}] 验证失败: ${statusResult.error}`);
+            return false;
         }
-
-        const isSignedToday = validData.currentSignStatus === 1;
-        this.addLog("连续签到", `${validData.consecutiveDays || 0} 天`);
-        this.addLog("今日状态", isSignedToday ? "已签到 🎉" : "未签到");
-
+        
+        const status = statusResult.data;
+        const isSignedToday = status.currentSignStatus === 1;
+        
+        this.addLog("连续签到", `${status.consecutiveDays || 0} 天`);
+        this.addLog("今日状态", isSignedToday ? "✅ 已签到" : "⏳ 未签到");
+        
+        log("INFO", `[${this.name}] 连续签到: ${status.consecutiveDays || 0} 天，今日: ${isSignedToday ? "已签到" : "未签到"}`);
+        
+        // 2. 执行签到（如果未签到）
         if (!isSignedToday) {
-            const success = await this.sign();
-            if (success) {
-                const [newData] = await this.valid();
+            const signResult = await this.doSign();
+            
+            if (signResult.success) {
                 this.addLog("签到结果", "✅ 成功");
-                this.addLog("连续签到", `${newData?.consecutiveDays || validData.consecutiveDays} 天`);
+                log("INFO", `[${this.name}] 签到成功`);
+                
+                // 重新获取状态确认
+                await sleep(1000);
+                const newStatus = await this.getStatus();
+                if (newStatus.success) {
+                    this.addLog("连续签到", `${newStatus.data.consecutiveDays || status.consecutiveDays} 天`);
+                }
+            } else {
+                this.addLog("签到结果", `❌ ${signResult.error}`);
+                log("ERROR", `[${this.name}] 签到失败: ${signResult.error}`);
+                return false;
+            }
+        } else {
+            log("INFO", `[${this.name}] 今日已签到，跳过`);
+        }
+        
+        log("INFO", `[${this.name}] 签到流程完成`);
+        return true;
+    }
+}
+
+// ==================== 推送 ====================
+class PushNotifier {
+    static async bark(title, message) {
+        const key = process.env.BARK_KEY;
+        if (!key) return { success: false, skipped: true };
+        
+        const url = (process.env.BARK_URL || "https://api.day.app").replace(/\/$/, "");
+        const params = new URLSearchParams();
+        
+        if (process.env.BARK_GROUP) params.append("group", process.env.BARK_GROUP);
+        if (process.env.BARK_ICON) params.append("icon", process.env.BARK_ICON);
+        if (process.env.BARK_SOUND) params.append("sound", process.env.BARK_SOUND);
+        
+        try {
+            const fullUrl = `${url}/${key}/${encodeURIComponent(title)}/${encodeURIComponent(message)}?${params}`;
+            await axios.get(fullUrl, { timeout: 10000 });
+            log("INFO", "[Bark] 推送成功");
+            return { success: true };
+        } catch (error) {
+            log("ERROR", "[Bark] 推送失败", { error: error.message });
+            return { success: false, error: error.message };
+        }
+    }
+
+    static async pushPlus(title, message) {
+        const token = process.env.PUSHPLUS_TOKEN;
+        if (!token) return { success: false, skipped: true };
+        
+        try {
+            await axios.post("https://www.pushplus.plus/send", {
+                token,
+                title,
+                content: message.replace(/\n/g, "<br>"),
+                template: "html",
+            }, { timeout: 15000 });
+            log("INFO", "[PushPlus] 推送成功");
+            return { success: true };
+        } catch (error) {
+            log("ERROR", "[PushPlus] 推送失败", { error: error.message });
+            return { success: false, error: error.message };
+        }
+    }
+
+    static async send(title, message) {
+        const results = await Promise.all([
+            this.bark(title, message),
+            this.pushPlus(title, message),
+        ]);
+        
+        const allSkipped = results.every(r => r.skipped);
+        if (allSkipped) {
+            log("INFO", "未配置任何推送渠道");
+        }
+        
+        return results;
+    }
+}
+
+// ==================== 入口 ====================
+async function init() {
+    log("INFO", "🚀 九号出行自动签到启动");
+    
+    try {
+        checkSecrets();
+        
+        // 解析账号配置
+        let accounts = [];
+        if (process.env.NINEBOT_ACCOUNTS) {
+            try {
+                const parsed = JSON.parse(process.env.NINEBOT_ACCOUNTS);
+                accounts = parsed.map((acc, i) => ({
+                    name: acc.name || `账号${i + 1}`,
+                    deviceId: acc.deviceId,
+                    authorization: acc.authorization,
+                }));
+                log("INFO", `已加载 ${accounts.length} 个账号（多账号模式）`);
+            } catch (e) {
+                log("ERROR", "NINEBOT_ACCOUNTS JSON 格式错误", { error: e.message });
+                process.exit(1);
+            }
+        } else {
+            accounts.push({
+                name: process.env.NINEBOT_NAME || "默认账号",
+                deviceId: process.env.NINEBOT_DEVICE_ID,
+                authorization: process.env.NINEBOT_AUTHORIZATION,
+            });
+            log("INFO", "已加载 1 个账号（单账号模式）`);
+        }
+        
+        // 执行签到
+        const results = [];
+        let successCount = 0;
+        
+        for (const acc of accounts) {
+            const bot = new NineBot(acc.deviceId, acc.authorization, acc.name);
+            const success = await bot.run();
+            results.push({ name: acc.name, logs: bot.logText, success });
+            if (success) successCount++;
+            
+            // 账号间延迟，避免请求过快
+            if (accounts.length > 1) {
+                await sleep(2000);
             }
         }
-
-        console.log(`[${this.name}] ■ 签到完成`);
-    }
-}
-
-// Bark 推送
-async function sendBark(title, message) {
-    const key = process.env.BARK_KEY;
-    if (!key) return;
-    const url = (process.env.BARK_URL || "https://api.day.app").replace(/\/$/, "");
-    const params = [];
-    if (process.env.BARK_GROUP) params.push(`group=${encodeURIComponent(process.env.BARK_GROUP)}`);
-    if (process.env.BARK_ICON) params.push(`icon=${encodeURIComponent(process.env.BARK_ICON)}`);
-    if (process.env.BARK_SOUND) params.push(`sound=${encodeURIComponent(process.env.BARK_SOUND)}`);
-    
-    try {
-        const fullUrl = `${url}/${key}/${encodeURIComponent(title)}/${encodeURIComponent(message)}${params.length ? "?" + params.join("&") : ""}`;
-        await axios.get(fullUrl, { timeout: 8000 });
-        console.log("[Bark] ✅ 发送成功");
-    } catch (e) {
-        console.error("[Bark] ❌ 发送失败:", e.message);
-    }
-}
-
-// PushPlus 推送
-async function sendPushPlus(title, message) {
-    const token = process.env.PUSHPLUS_TOKEN;
-    if (!token) return;
-    try {
-        await axios.post("https://www.pushplus.plus/send", {
-            token, title,
-            content: message.replace(/\n/g, "<br>"),
-            template: "html",
-        }, { timeout: 10000 });
-        console.log("[PushPlus] ✅ 发送成功");
-    } catch (e) {
-        console.error("[PushPlus] ❌ 发送失败:", e.message);
-    }
-}
-
-// 入口
-async function init() {
-    checkSecrets();
-
-    let accounts = [];
-    if (process.env.NINEBOT_ACCOUNTS) {
-        try {
-            const parsed = JSON.parse(process.env.NINEBOT_ACCOUNTS);
-            accounts = parsed.map((acc, i) => ({
-                name: acc.name || `账号${i + 1}`,
-                deviceId: acc.deviceId,
-                authorization: acc.authorization,
-            }));
-        } catch (e) {
-            console.error("[账号解析] JSON 格式错误:", e.message);
+        
+        // 汇总结果
+        const title = `九号出行签到 - ${successCount}/${accounts.length} 成功`;
+        const message = results.map(r => 
+            `📱 ${r.name} ${r.success ? "✅" : "❌"}\n${r.logs.split("\n").map(l => `  ${l}`).join("\n")}`
+        ).join("\n\n");
+        
+        log("INFO", `${"-".repeat(40)}\n汇总: ${successCount}/${accounts.length} 成功\n${"-".repeat(40)}`);
+        
+        // 发送推送
+        await PushNotifier.send(title, message);
+        
+        // 如果有失败，返回非零退出码
+        if (successCount < accounts.length) {
             process.exit(1);
         }
-    } else {
-        accounts.push({
-            name: process.env.NINEBOT_NAME || "默认账号",
-            deviceId: process.env.NINEBOT_DEVICE_ID,
-            authorization: process.env.NINEBOT_AUTHORIZATION,
-        });
+        
+        log("INFO", "✅ 所有账号签到完成");
+    } catch (error) {
+        log("ERROR", "程序异常", { error: error.message, stack: error.stack });
+        await PushNotifier.send("九号出行签到 - 程序异常", `错误: ${error.message}`);
+        process.exit(1);
     }
-
-    const results = [];
-    for (const acc of accounts) {
-        console.log(`\n${"═".repeat(40)}\n  账号: ${acc.name}\n${"═".repeat(40)}`);
-        try {
-            const bot = new NineBot(acc.deviceId, acc.authorization, acc.name);
-            await bot.run();
-            results.push({ name: acc.name, logs: bot.logs });
-        } catch (e) {
-            results.push({ name: acc.name, logs: `失败: ${e.message}` });
-        }
-    }
-
-    const title = "九号出行签到结果";
-    const message = results.map(r => `📱 ${r.name}\n${r.logs.split("\n").map(l => `  ${l}`).join("\n")}`).join("\n\n");
-    
-    console.log("\n" + "─".repeat(40) + "\n汇总:\n" + message + "\n" + "─".repeat(40));
-
-    await sendBark(title, message);
-    await sendPushPlus(title, message);
 }
 
-init().catch(err => {
-    console.error("程序崩溃:", err);
-    process.exit(1);
-});
+init();
