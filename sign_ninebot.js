@@ -271,7 +271,8 @@ class PushNotifier {
         if (process.env.BARK_SOUND) params.append("sound", process.env.BARK_SOUND);
         
         try {
-            const fullUrl = `${url}/${key}/${encodeURIComponent(title)}/${encodeURIComponent(message)}?${params}`;
+            const queryString = params.toString();
+            const fullUrl = `${url}/${key}/${encodeURIComponent(title)}/${encodeURIComponent(message)}${queryString ? '?' + queryString : ''}`;
             await axios.get(fullUrl, { timeout: 10000 });
             log("INFO", "[Bark] 推送成功");
             return { success: true };
@@ -317,6 +318,9 @@ class PushNotifier {
 
 // ==================== 入口 ====================
 async function init() {
+    // 初始化日志目录
+    initLogDir();
+    
     log("INFO", "🚀 九号出行自动签到启动");
     
     try {
@@ -343,7 +347,7 @@ async function init() {
                 deviceId: process.env.NINEBOT_DEVICE_ID,
                 authorization: process.env.NINEBOT_AUTHORIZATION,
             });
-            log("INFO", "已加载 1 个账号（单账号模式）`);
+            log("INFO", "已加载 1 个账号（单账号模式）");
         }
         
         // 执行签到

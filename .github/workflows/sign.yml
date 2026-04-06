@@ -37,8 +37,5 @@ jobs:
         BARK_GROUP: ${{ secrets.BARK_GROUP }}
         BARK_ICON: ${{ secrets.BARK_ICON }}
         BARK_SOUND: ${{ secrets.BARK_SOUND }}
-        BARK_URL_JUMP: ${{ secrets.BARK_URL_JUMP }}
-        BARK_AUTO_COPY: ${{ secrets.BARK_AUTO_COPY }}
-        BARK_COPY: ${{ secrets.BARK_COPY }}
         PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
       run: node sign_ninebot.js
