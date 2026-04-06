@@ -13,8 +13,23 @@ const CONFIG = {
     BASE_DELAY: 2000,
     REQUEST_TIMEOUT: 20000,
     LOG_DIR: join(__dirname, "logs"),
-    LOG_FILE: join(__dirname, "logs", `sign_${formatDate(new Date())}.log`),
 };
+
+// 初始化日志目录
+function initLogDir() {
+    try {
+        if (!existsSync(CONFIG.LOG_DIR)) {
+            mkdirSync(CONFIG.LOG_DIR, { recursive: true });
+        }
+    } catch (e) {
+        console.error("[ERROR] 创建日志目录失败:", e.message);
+    }
+}
+
+// 获取日志文件路径（每次调用获取当前日期）
+function getLogFile() {
+    return join(CONFIG.LOG_DIR, `sign_${formatDate(new Date())}.log`);
+}
 
 // ==================== 工具函数 ====================
 function formatDate(date, format = "YYYY-MM-DD") {
