@@ -1,0 +1,27 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # 每月15号和最后一天 UTC 00:00（北京时间 08:00）各运行一次
+    - cron: '0 0 15 * *'
+    - cron: '0 0 28-31 * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork == false
+    permissions:
+      contents: write
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 空提交保活
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git commit --allow-empty -m "chore: keep alive $(date +%Y-%m-%d)"
+        git push
