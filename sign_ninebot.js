@@ -80,7 +80,7 @@ function log(level, message, data = null) {
         if (!existsSync(CONFIG.LOG_DIR)) {
             mkdirSync(CONFIG.LOG_DIR, { recursive: true });
         }
-        appendFileSync(CONFIG.LOG_FILE, logLine + "\n");
+        appendFileSync(getLogFile(), logLine + "\n");
     } catch (e) {
         // 文件写入失败不影响主程序
     }
@@ -400,9 +400,10 @@ async function init() {
         
         const title = "九号出行签到结果";
         const message = results.map(r => {
+            const emoji = r.signSuccess ? "✅" : "❌";
             const statusEmoji = r.signSuccess ? "🎉" : "❌";
             const statusText = r.isSignedToday ? "已签到" : (r.signSuccess ? "签到成功" : "签到失败");
-            return `✅ ${r.name}\n连续签到天数: ${r.consecutiveDays}天\n今日签到状态: ${statusText}${statusEmoji}\n签到结果: ${statusText}${statusEmoji}${statusEmoji}`;
+            return `${emoji} ${r.name}\n连续签到天数: ${r.consecutiveDays}天\n今日签到状态: ${statusText}${statusEmoji}\n签到结果: ${statusText}${statusEmoji}${statusEmoji}`;
         }).join("\n\n");
         
         log("INFO", `${"-".repeat(40)}\n汇总: ${successCount}/${accounts.length} 成功\n${"-".repeat(40)}`);
