@@ -101,6 +101,20 @@ function checkSecrets() {
     log("INFO", "环境变量校验通过");
 }
 
+// Token 有效性校验
+function checkTokenValid(data) {
+    if (!data) return true;
+    const invalidCodes = [401, 403, 50001, 50002, 50003];
+    const invalidMsgs = ["无效", "过期", "未登录", "授权", "token", "authorization", "请重新登录"];
+    
+    // 检查错误码
+    if (invalidCodes.includes(data.code)) return false;
+    
+    // 检查响应消息关键词
+    const respStr = JSON.stringify(data).toLowerCase();
+    return !invalidMsgs.some(msg => respStr.includes(msg.toLowerCase()));
+}
+
 // ==================== 核心类 ====================
 class NineBot {
     constructor(deviceId, authorization, name = "九号出行") {
@@ -111,36 +125,54 @@ class NineBot {
         this.consecutiveDays = 0;
         this.isSignedToday = false;
         this.signSuccess = false;
+
+        // 盲盒相关
+        this.blindBoxResults = [];
+        this.blindBoxSummary = "";
         
         // 创建 axios 实例
         this.client = axios.create({
             timeout: CONFIG.REQUEST_TIMEOUT,
             headers: {
-                Accept: "application/json, text/plain, */*",
+                Accept: "application/json",
                 Authorization: authorization,
                 "Accept-Encoding": "gzip, deflate, br",
                 "Accept-Language": "zh-CN,zh-Hans;q=0.9",
                 "Content-Type": "application/json",
-                Host: "cn-cbu-gateway.ninebot.com",
-                Origin: "https://h5-bj.ninebot.com",
+                aid: "10000004",
+                device_id: deviceId,
                 from_platform_1: "1",
                 language: "zh",
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Segway v6 C 609033420",
+                Origin: "https://h5-bj.ninebot.com",
+                platform: "h5",
                 Referer: "https://h5-bj.ninebot.com/",
+                sys_language: "zh-CN",
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Segway v6 C 609033420",
             },
         });
         
-        // 响应拦截器 - 统一错误处理
+        // 响应拦截器 - 统一错误处理 + Token 有效性检测
         this.client.interceptors.response.use(
-            response => response,
+            response => {
+                // 检查响应体中的业务错误码
+                const { data } = response;
+                if (data && !checkTokenValid(data)) {
+                    throw new Error("Token失效/未授权，请重新抓包更新 authorization");
+                }
+                return response;
+            },
             error => {
                 if (error.response) {
                     const { status, data } = error.response;
                     log("WARN", `HTTP ${status}`, { url: error.config?.url, data });
                     
-                    // 401 可能是 token 过期
-                    if (status === 401) {
-                        throw new Error("授权已过期，请更新 authorization");
+                    // HTTP 级 Token 失效检测
+                    if (status === 401 || status === 403) {
+                        throw new Error("授权已过期/失效，请更新 authorization");
+                    }
+                    // 检查响应体中的错误码
+                    if (data && !checkTokenValid(data)) {
+                        throw new Error("Token失效/未授权，请重新抓包更新 authorization");
                     }
                 } else if (error.request) {
                     log("WARN", "网络请求无响应", { url: error.config?.url });
@@ -154,6 +186,9 @@ class NineBot {
         this.endpoints = {
             sign: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/sign",
             status: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/status",
+            blindBoxReceive: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/receive",
+            blindBoxList: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/list",
+            blindBoxOpen: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/open",
         };
     }
 
@@ -226,6 +261,71 @@ class NineBot {
         }
     }
 
+    // 领取当日盲盒
+    async receiveBlindBox() {
+        try {
+            const data = await this.requestWithRetry("post", this.endpoints.blindBoxReceive, {});
+            if (data.code === 0) {
+                log("INFO", `[${this.name}] ✅ 盲盒领取成功`);
+                return { success: true };
+            }
+            log("INFO", `[${this.name}] 盲盒: ${data.msg || "已领取/无资格"}`);
+            return { success: false, error: data.msg };
+        } catch (error) {
+            log("WARN", `[${this.name}] 盲盒领取异常: ${error.message}`);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 自动开箱（仅开 waitDay===0 的盲盒），返回摘要
+    async openAvailableBoxes() {
+        const boxResults = [];
+        try {
+            const data = await this.requestWithRetry("get", this.endpoints.blindBoxList);
+            const notOpened = data?.data?.notOpenedBoxes || [];
+            const openedBefore = (data?.data?.openedBoxes || []).length;
+            const available = notOpened.filter(b => Number(b.waitDay ?? 0) === 0);
+            
+            if (available.length === 0) {
+                log("INFO", `[${this.name}] 无即时可开盲盒（待攒: ${notOpened.length}个）`);
+                boxResults.push(`无即时可开盲盒（待开箱: ${notOpened.length}个）`);
+                return { boxResults, summary: `盲盒: 已开${openedBefore}个 待开${notOpened.length}个(可开0个)` };
+            }
+            
+            log("INFO", `[${this.name}] 待开盲盒: ${available.length}个`);
+            let openedCount = 0;
+            
+            for (const box of available) {
+                const boxId = box.boxId;
+                if (!boxId) {
+                    boxResults.push(`❌ 盲盒缺少boxId`);
+                    continue;
+                }
+                try {
+                    const openResp = await this.requestWithRetry("post", this.endpoints.blindBoxOpen, { boxId });
+                    if (openResp.code === 0) {
+                        const typeName = openResp.data.rewardType === 1 ? "经验" : "N币";
+                        const label = box.awardDays ? `${box.awardDays}天盲盒` : "盲盒";
+                        boxResults.push(`${label}: +${openResp.data.rewardValue}${typeName}`);
+                        openedCount++;
+                    } else {
+                        boxResults.push(`盲盒: ${openResp.msg || "开箱失败"}`);
+                    }
+                } catch (e) {
+                    boxResults.push(`盲盒异常: ${String(e).substring(0, 25)}`);
+                }
+                await sleep(1200);
+            }
+            
+            const summary = `盲盒: 已开${openedBefore + openedCount}个 待开${notOpened.length - openedCount}个(可开0个)`;
+            return { boxResults, summary };
+        } catch (error) {
+            log("WARN", `[${this.name}] 盲盒列表异常: ${error.message}`);
+            boxResults.push(`盲盒列表查询异常`);
+            return { boxResults, summary: "盲盒: 查询失败" };
+        }
+    }
+
     // 主流程
     async run() {
         log("INFO", `${"=".repeat(40)}\n  账号: ${this.name}\n${"=".repeat(40)}`);
@@ -272,6 +372,25 @@ class NineBot {
         } else {
             this.signSuccess = true;
             log("INFO", `[${this.name}] 今日已签到，跳过`);
+        }
+        
+        // 3. 盲盒领取+开箱（签到成功后）
+        if (this.signSuccess) {
+            // 领取当日盲盒
+            const receiveResult = await this.receiveBlindBox();
+            if (receiveResult.success) {
+                this.addLog("盲盒领取", "✅ 已领取");
+            }
+            
+            // 自动开箱
+            const boxResult = await this.openAvailableBoxes();
+            this.blindBoxResults = boxResult.boxResults;
+            this.blindBoxSummary = boxResult.summary;
+            if (boxResult.boxResults.length > 0) {
+                this.addLog("盲盒开箱", boxResult.boxResults.join("; "));
+            }
+            
+            log("INFO", `[${this.name}] ${this.blindBoxSummary}`);
         }
         
         log("INFO", `[${this.name}] 签到流程完成`);
@@ -384,7 +503,9 @@ async function init() {
                 success, 
                 consecutiveDays: bot.consecutiveDays,
                 isSignedToday: bot.isSignedToday,
-                signSuccess: bot.signSuccess
+                signSuccess: bot.signSuccess,
+                blindBoxResults: bot.blindBoxResults,
+                blindBoxSummary: bot.blindBoxSummary,
             });
             if (success) successCount++;
             
@@ -403,7 +524,20 @@ async function init() {
             const emoji = r.signSuccess ? "✅" : "❌";
             const statusEmoji = r.signSuccess ? "🎉" : "❌";
             const statusText = r.isSignedToday ? "已签到" : (r.signSuccess ? "签到成功" : "签到失败");
-            return `${emoji} ${r.name}\n连续签到天数: ${r.consecutiveDays}天\n今日签到状态: ${statusText}${statusEmoji}\n签到结果: ${statusText}${statusEmoji}${statusEmoji}`;
+            let parts = [
+                `${emoji} ${r.name}`,
+                `连续签到天数: ${r.consecutiveDays}天`,
+                `今日签到状态: ${statusText}${statusEmoji}`,
+                `签到结果: ${statusText}${statusEmoji}${statusEmoji}`,
+            ];
+            // 盲盒信息
+            if (r.signSuccess && r.blindBoxSummary) {
+                parts.push(r.blindBoxSummary);
+            }
+            if (r.blindBoxResults && r.blindBoxResults.length > 0) {
+                parts.push(`开箱: ${r.blindBoxResults.join(", ")}`);
+            }
+            return parts.join("\n");
         }).join("\n\n");
         
         log("INFO", `${"-".repeat(40)}\n汇总: ${successCount}/${accounts.length} 成功\n${"-".repeat(40)}`);
