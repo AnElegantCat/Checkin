@@ -286,6 +286,7 @@ class NineBot {
             const openedBefore = (data?.data?.openedBoxes || []).length;
             
             // 调试：打印盲盒数据结构
+            log("INFO", `[${this.name}] 盲盒列表原始响应: ${JSON.stringify(data).substring(0, 500)}`);
             if (notOpened.length > 0) {
                 log("INFO", `[${this.name}] 盲盒数据样例: ${JSON.stringify(notOpened[0])}`);
             }
@@ -302,7 +303,8 @@ class NineBot {
             let openedCount = 0;
             
             for (const box of available) {
-                const boxId = box.boxId;
+                // 兼容多种可能的 boxId 字段名
+                const boxId = box.boxId || box.id || box.box_id || box.BoxId;
                 if (!boxId) {
                     boxResults.push(`❌ 盲盒缺少boxId`);
                     continue;
