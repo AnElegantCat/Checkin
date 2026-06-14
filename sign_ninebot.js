@@ -188,7 +188,6 @@ class NineBot {
             status: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/status",
             blindBoxReceive: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/receive",
             blindBoxList: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/list",
-            blindBoxOpen: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-boxes/open",
         };
     }
 
@@ -277,7 +276,7 @@ class NineBot {
         }
     }
 
-    // 自动开箱（仅开 waitDay===0 的盲盒），返回摘要
+    // 自动开箱：通过 receive 接口传入 rewardId 来开箱
     async openAvailableBoxes() {
         const boxResults = [];
         try {
@@ -285,8 +284,10 @@ class NineBot {
             const notOpened = data?.data?.notOpenedBoxes || [];
             const openedBefore = (data?.data?.openedBoxes || []).length;
             
-            // 筛选可开的盲盒：rewardStatus === 1 表示可开
-            const available = notOpened.filter(b => b.rewardStatus === 1);
+            // 可开条件：rewardStatus === 1 或 leftDaysToOpen === 0
+            const available = notOpened.filter(b => 
+                b.rewardStatus === 1 || Number(b.leftDaysToOpen ?? -1) === 0
+            );
             
             if (available.length === 0) {
                 log("INFO", `[${this.name}] 无即时可开盲盒（待攒: ${notOpened.length}个）`);
@@ -298,14 +299,15 @@ class NineBot {
             let openedCount = 0;
             
             for (const box of available) {
-                // boxId 在 blindBoxIds 数组中
-                const boxId = (box.blindBoxIds && box.blindBoxIds[0]) || box.boxId || box.id;
-                if (!boxId) {
-                    boxResults.push(`❌ 盲盒缺少boxId`);
+                // 取 blindBoxIds[0] 作为 rewardId
+                const rewardId = (box.blindBoxIds && box.blindBoxIds[0]) || box.boxId || box.id;
+                if (!rewardId) {
+                    boxResults.push(`❌ 盲盒缺少ID`);
                     continue;
                 }
                 try {
-                    const openResp = await this.requestWithRetry("post", this.endpoints.blindBoxOpen, { blindBoxIds: box.blindBoxIds });
+                    // 开箱 = 调用 receive 接口传入 rewardId
+                    const openResp = await this.requestWithRetry("post", this.endpoints.blindBoxReceive, { rewardId: String(rewardId) });
                     if (openResp.code === 0) {
                         const typeName = openResp.data.rewardType === 1 ? "经验" : "N币";
                         const label = box.awardDays ? `${box.awardDays}天盲盒` : "盲盒";
