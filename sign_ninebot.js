@@ -188,7 +188,7 @@ class NineBot {
             status: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/status",
             blindBoxReceive: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/receive",
             blindBoxList: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/list",
-            blindBoxOpen: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-box/open",
+            blindBoxOpen: "https://cn-cbu-gateway.ninebot.com/portal/api/user-sign/v2/blind-boxes/open",
         };
     }
 
@@ -305,7 +305,7 @@ class NineBot {
                     continue;
                 }
                 try {
-                    const openResp = await this.requestWithRetry("post", this.endpoints.blindBoxOpen, { boxId });
+                    const openResp = await this.requestWithRetry("post", this.endpoints.blindBoxOpen, { blindBoxIds: box.blindBoxIds });
                     if (openResp.code === 0) {
                         const typeName = openResp.data.rewardType === 1 ? "经验" : "N币";
                         const label = box.awardDays ? `${box.awardDays}天盲盒` : "盲盒";
