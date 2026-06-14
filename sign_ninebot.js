@@ -284,6 +284,12 @@ class NineBot {
             const data = await this.requestWithRetry("get", this.endpoints.blindBoxList);
             const notOpened = data?.data?.notOpenedBoxes || [];
             const openedBefore = (data?.data?.openedBoxes || []).length;
+            
+            // 调试：打印盲盒数据结构
+            if (notOpened.length > 0) {
+                log("INFO", `[${this.name}] 盲盒数据样例: ${JSON.stringify(notOpened[0])}`);
+            }
+            
             const available = notOpened.filter(b => Number(b.waitDay ?? 0) === 0);
             
             if (available.length === 0) {
