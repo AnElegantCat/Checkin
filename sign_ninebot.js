@@ -285,13 +285,8 @@ class NineBot {
             const notOpened = data?.data?.notOpenedBoxes || [];
             const openedBefore = (data?.data?.openedBoxes || []).length;
             
-            // 调试：打印盲盒数据结构
-            log("INFO", `[${this.name}] 盲盒列表原始响应: ${JSON.stringify(data).substring(0, 500)}`);
-            if (notOpened.length > 0) {
-                log("INFO", `[${this.name}] 盲盒数据样例: ${JSON.stringify(notOpened[0])}`);
-            }
-            
-            const available = notOpened.filter(b => Number(b.waitDay ?? 0) === 0);
+            // 筛选可开的盲盒：rewardStatus === 1 表示可开
+            const available = notOpened.filter(b => b.rewardStatus === 1);
             
             if (available.length === 0) {
                 log("INFO", `[${this.name}] 无即时可开盲盒（待攒: ${notOpened.length}个）`);
@@ -303,8 +298,8 @@ class NineBot {
             let openedCount = 0;
             
             for (const box of available) {
-                // 兼容多种可能的 boxId 字段名
-                const boxId = box.boxId || box.id || box.box_id || box.BoxId;
+                // boxId 在 blindBoxIds 数组中
+                const boxId = (box.blindBoxIds && box.blindBoxIds[0]) || box.boxId || box.id;
                 if (!boxId) {
                     boxResults.push(`❌ 盲盒缺少boxId`);
                     continue;
