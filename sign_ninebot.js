@@ -13,6 +13,7 @@ const CONFIG = {
     BASE_DELAY: 2000,
     REQUEST_TIMEOUT: 20000,
     LOG_DIR: join(__dirname, "logs"),
+    TOKEN_INVALID_ERROR: "Token失效/未授权，请重新抓包更新 authorization",
 };
 
 // 初始化日志目录
@@ -101,6 +102,19 @@ function checkSecrets() {
     log("INFO", "环境变量校验通过");
 }
 
+function normalizeAccount(acc, index) {
+    const name = acc.name || `账号${index + 1}`;
+    const deviceId = acc.deviceId || acc.device_id || acc.DeviceId;
+    const authorization = acc.authorization || acc.Authorization || acc.token || acc.Token;
+    const missing = [];
+    if (!deviceId) missing.push("deviceId");
+    if (!authorization) missing.push("authorization");
+    if (missing.length > 0) {
+        throw new Error(`${name} 缺少字段: ${missing.join(", ")}`);
+    }
+    return { name, deviceId, authorization };
+}
+
 // Token 有效性校验
 function checkTokenValid(data) {
     if (!data) return true;
@@ -157,7 +171,9 @@ class NineBot {
                 // 检查响应体中的业务错误码
                 const { data } = response;
                 if (data && !checkTokenValid(data)) {
-                    throw new Error("Token失效/未授权，请重新抓包更新 authorization");
+                    const err = new Error(CONFIG.TOKEN_INVALID_ERROR);
+                    err.noRetry = true;
+                    throw err;
                 }
                 return response;
             },
@@ -168,11 +184,15 @@ class NineBot {
                     
                     // HTTP 级 Token 失效检测
                     if (status === 401 || status === 403) {
-                        throw new Error("授权已过期/失效，请更新 authorization");
+                        const err = new Error("授权已过期/失效，请更新 authorization");
+                        err.noRetry = true;
+                        throw err;
                     }
                     // 检查响应体中的错误码
                     if (data && !checkTokenValid(data)) {
-                        throw new Error("Token失效/未授权，请重新抓包更新 authorization");
+                        const err = new Error(CONFIG.TOKEN_INVALID_ERROR);
+                        err.noRetry = true;
+                        throw err;
                     }
                 } else if (error.request) {
                     log("WARN", "网络请求无响应", { url: error.config?.url });
@@ -218,6 +238,10 @@ class NineBot {
             } catch (error) {
                 lastError = error;
                 const isLastAttempt = attempt === CONFIG.MAX_RETRIES;
+                
+                if (error.noRetry) {
+                    throw error;
+                }
                 
                 if (!isLastAttempt) {
                     const delay = getRetryDelay(attempt);
@@ -433,12 +457,15 @@ class PushNotifier {
         if (!token) return { success: false, skipped: true };
         
         try {
-            await axios.post("https://www.pushplus.plus/send", {
+            const response = await axios.post("https://www.pushplus.plus/send", {
                 token,
                 title,
                 content: message.replace(/\n/g, "<br>"),
                 template: "html",
             }, { timeout: 15000 });
+            if (response.data?.code !== 200) {
+                throw new Error(response.data?.msg || `PushPlus返回异常: ${JSON.stringify(response.data)}`);
+            }
             log("INFO", "[PushPlus] 推送成功");
             return { success: true };
         } catch (error) {
@@ -477,11 +504,10 @@ async function init() {
         if (process.env.NINEBOT_ACCOUNTS) {
             try {
                 const parsed = JSON.parse(process.env.NINEBOT_ACCOUNTS);
-                accounts = parsed.map((acc, i) => ({
-                    name: acc.name || `账号${i + 1}`,
-                    deviceId: acc.deviceId,
-                    authorization: acc.authorization,
-                }));
+                if (!Array.isArray(parsed) || parsed.length === 0) {
+                    throw new Error("NINEBOT_ACCOUNTS 必须是非空 JSON 数组");
+                }
+                accounts = parsed.map(normalizeAccount);
                 log("INFO", `已加载 ${accounts.length} 个账号（多账号模式）`);
             } catch (e) {
                 log("ERROR", "NINEBOT_ACCOUNTS JSON 格式错误", { error: e.message });
