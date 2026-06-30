@@ -60,7 +60,7 @@ git push -u origin main
 
 ## 自动运行时间
 
-- 默认：每天北京时间 **08:00** 自动运行
+- 默认：每天北京时间 **07:00** 自动运行
 - 如需修改，编辑 `.github/workflows/sign.yml` 中的 cron 表达式
 
 ---

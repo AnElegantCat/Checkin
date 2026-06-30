@@ -137,6 +137,9 @@ on:
 │   └── keepalive.yml           # 仓库保活工作流
 ├── sign_ninebot.js              # 签到脚本（主程序）
 ├── package.json                 # 依赖配置
+├── GITHUB_SETUP.md              # GitHub Actions 配置说明
+├── .env.example                 # 环境变量示例
+├── .gitignore                   # Git 忽略配置
 ├── README.md                    # 说明文档
 └── logs/                        # 运行日志目录（自动创建）
     └── sign_YYYY-MM-DD.log
@@ -146,7 +149,7 @@ on:
 
 ## 🔧 技术特性
 
-- **Node.js 18+** - 使用 ES Module 模块化
+- **Node.js 24** - 使用 ES Module 模块化
 - **签到+盲盒一体化** - 签到成功后自动领取盲盒并开启（rewardStatus===1）
 - **Token 多级校验** - HTTP 状态码 + 业务错误码（50001-50003）+ 关键词匹配
 - **指数退避重试** - 2s → 4s → 8s + 随机抖动
