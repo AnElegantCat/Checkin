@@ -12,6 +12,7 @@ const CONFIG = {
     MAX_RETRIES: 3,
     BASE_DELAY: 2000,
     REQUEST_TIMEOUT: 20000,
+    MAX_RESPONSE_BYTES: 1024 * 1024,
     LOG_DIR: join(__dirname, "logs"),
     TOKEN_INVALID_ERROR: "Token失效/未授权，请重新抓包更新 authorization",
 };
@@ -59,6 +60,23 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function safeJsonStringify(value) {
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 // 指数退避 + 抖动
 function getRetryDelay(attempt) {
     const exponential = CONFIG.BASE_DELAY * Math.pow(2, attempt - 1);
@@ -66,12 +84,20 @@ function getRetryDelay(attempt) {
     return Math.min(exponential + jitter, 30000);
 }
 
+function shouldRetryRequest(error) {
+    if (error.noRetry) return false;
+    if (!error.response) return true;
+
+    const retryableStatus = [408, 409, 425, 429, 500, 502, 503, 504];
+    return retryableStatus.includes(error.response.status);
+}
+
 // 日志记录
 function log(level, message, data = null) {
     const timestamp = now();
     const prefix = `[${timestamp}] [${level}]`;
     const logLine = data 
-        ? `${prefix} ${message} ${JSON.stringify(data)}`
+        ? `${prefix} ${message} ${safeJsonStringify(data)}`
         : `${prefix} ${message}`;
     
     console.log(logLine);
@@ -103,9 +129,13 @@ function checkSecrets() {
 }
 
 function normalizeAccount(acc, index) {
-    const name = acc.name || `账号${index + 1}`;
-    const deviceId = acc.deviceId || acc.device_id || acc.DeviceId;
-    const authorization = acc.authorization || acc.Authorization || acc.token || acc.Token;
+    if (!acc || typeof acc !== "object" || Array.isArray(acc)) {
+        throw new Error(`账号${index + 1} 必须是对象`);
+    }
+
+    const name = String(acc.name || `账号${index + 1}`).trim();
+    const deviceId = String(acc.deviceId || acc.device_id || acc.DeviceId || "").trim();
+    const authorization = String(acc.authorization || acc.Authorization || acc.token || acc.Token || "").trim();
     const missing = [];
     if (!deviceId) missing.push("deviceId");
     if (!authorization) missing.push("authorization");
@@ -147,6 +177,8 @@ class NineBot {
         // 创建 axios 实例
         this.client = axios.create({
             timeout: CONFIG.REQUEST_TIMEOUT,
+            maxContentLength: CONFIG.MAX_RESPONSE_BYTES,
+            maxBodyLength: CONFIG.MAX_RESPONSE_BYTES,
             headers: {
                 Accept: "application/json",
                 Authorization: authorization,
@@ -243,6 +275,10 @@ class NineBot {
                     throw error;
                 }
                 
+                if (!shouldRetryRequest(error)) {
+                    throw error;
+                }
+
                 if (!isLastAttempt) {
                     const delay = getRetryDelay(attempt);
                     log("WARN", `[${this.name}] 请求失败，${delay}ms 后重试`, { error: error.message });
@@ -305,6 +341,9 @@ class NineBot {
         const boxResults = [];
         try {
             const data = await this.requestWithRetry("get", this.endpoints.blindBoxList);
+            if (data.code !== 0) {
+                throw new Error(data.msg || "盲盒列表查询失败");
+            }
             const notOpened = data?.data?.notOpenedBoxes || [];
             const openedBefore = (data?.data?.openedBoxes || []).length;
             
@@ -457,12 +496,17 @@ class PushNotifier {
         if (!token) return { success: false, skipped: true };
         
         try {
+            const content = escapeHtml(message).replace(/\n/g, "<br>");
             const response = await axios.post("https://www.pushplus.plus/send", {
                 token,
                 title,
-                content: message.replace(/\n/g, "<br>"),
+                content,
                 template: "html",
-            }, { timeout: 15000 });
+            }, {
+                timeout: 15000,
+                maxContentLength: CONFIG.MAX_RESPONSE_BYTES,
+                maxBodyLength: CONFIG.MAX_RESPONSE_BYTES,
+            });
             if (response.data?.code !== 200) {
                 throw new Error(response.data?.msg || `PushPlus返回异常: ${JSON.stringify(response.data)}`);
             }
@@ -514,11 +558,11 @@ async function init() {
                 process.exit(1);
             }
         } else {
-            accounts.push({
+            accounts.push(normalizeAccount({
                 name: process.env.NINEBOT_NAME || "默认账号",
                 deviceId: process.env.NINEBOT_DEVICE_ID,
                 authorization: process.env.NINEBOT_AUTHORIZATION,
-            });
+            }, 0));
             log("INFO", "已加载 1 个账号（单账号模式）");
         }
         
