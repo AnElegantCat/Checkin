@@ -7,7 +7,7 @@
 | 字段 | 示例 |
 |------|-----|
 | deviceId | `550e8400-e29b-41d4-a716-446655440000` |
-| authorization | `Bearer eyJhbGci...`（完整 JWT，Bearer 前缀可省略，脚本会自动补全） |
+| authorization | `eyJhbGci...`（完整原始 JWT；如误带 `Bearer ` 前缀脚本会自动剥掉） |
 
 > ⚠️ **切勿把真实的 deviceId / authorization 写进任何会提交到仓库的文件**（包括本文档），只存放在 GitHub Secrets 或本地 `.env` 中。
 

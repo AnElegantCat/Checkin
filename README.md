@@ -34,7 +34,7 @@
 | Secret | 必填 | 说明 |
 |--------|------|------|
 | `NINEBOT_DEVICE_ID` | ✅ | 设备 ID |
-| `NINEBOT_AUTHORIZATION` | ✅ | Bearer Token（Bearer 前缀可省略，脚本会自动补全） |
+| `NINEBOT_AUTHORIZATION` | ✅ | 抓包得到的原始 JWT（`eyJ` 开头；如误带 `Bearer ` 前缀脚本会自动剥掉） |
 | `NINEBOT_NAME` | ❌ | 账号名称（用于推送显示） |
 
 #### 多账号模式（二选一）
@@ -75,7 +75,7 @@
    ```
 5. 提取：
    - **deviceId**: 请求体中的 `deviceId`
-   - **authorization**: 请求头中的 `Authorization`（含 `Bearer` 前缀）
+   - **authorization**: 请求头中的 `Authorization` 值（`eyJ` 开头的原始 JWT，不带 `Bearer` 前缀）
 
 ### Android（HttpCanary）
 
@@ -89,7 +89,7 @@
 
 ```
 NINEBOT_DEVICE_ID      = 550e8400-e29b-41d4-a716-446655440000
-NINEBOT_AUTHORIZATION  = Bearer eyJhbGciOiJIUzI1NiIs...
+NINEBOT_AUTHORIZATION  = eyJhbGciOiJIUzI1NiIs...
 NINEBOT_NAME           = 我的九号
 ```
 
@@ -102,12 +102,12 @@ NINEBOT_NAME           = 我的九号
   {
     "name": "账号1",
     "deviceId": "xxx",
-    "authorization": "Bearer xxx"
+    "authorization": "xxx"
   },
   {
     "name": "账号2",
     "deviceId": "yyy",
-    "authorization": "Bearer yyy"
+    "authorization": "yyy"
   }
 ]
 ```

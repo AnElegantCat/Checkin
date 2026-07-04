@@ -136,10 +136,8 @@ function normalizeAccount(acc, index) {
     const name = String(acc.name || `账号${index + 1}`).trim();
     const deviceId = String(acc.deviceId || acc.device_id || acc.DeviceId || "").trim();
     let authorization = String(acc.authorization || acc.Authorization || acc.token || acc.Token || "").trim();
-    // 漏写 Bearer 前缀是最常见的配置错误，自动补全
-    if (authorization && !/^bearer\s/i.test(authorization)) {
-        authorization = `Bearer ${authorization}`;
-    }
+    // 网关要求 Authorization 为抓包原始 JWT（eyJ 开头）；带 Bearer 前缀会被拒绝（返回"系统错误"），误粘贴时自动剥掉
+    authorization = authorization.replace(/^bearer\s+/i, "");
     const missing = [];
     if (!deviceId) missing.push("deviceId");
     if (!authorization) missing.push("authorization");
