@@ -1,18 +1,28 @@
-# NinebotCheckin - 九号出行自动签到
+# NinebotCheckin - 九号出行 & 什么值得买 自动签到
 
-🛴 **九号出行（Ninebot）自动签到工具** - 基于 GitHub Actions 实现每日自动签到 + 盲盒领取开箱，支持多账号、微信/Bark 推送通知。
+🛴 **九号出行（Ninebot）自动签到** + 🛒 **什么值得买（SMZDM）自动签到** - 基于 GitHub Actions 实现每日自动签到 + 任务/盲盒/抽奖，支持多账号、多推送渠道。
 
-[![GitHub Actions](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/sign.yml/badge.svg)](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/sign.yml)
+[![Ninebot Actions](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/sign.yml/badge.svg)](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/sign.yml)
+[![SMZDM Actions](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/smzdm.yml/badge.svg)](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/smzdm.yml)
 
 ---
 
 ## ✨ 功能特性
 
+### 🛴 九号出行 (Ninebot)
 - ✅ **每日自动签到** - 定时执行，无需人工干预
 - ✅ **盲盒自动领取+开箱** - 签到后自动领取盲盒，即时可开盲盒自动开启
 - ✅ **多账号支持** - 支持单账号或多账号批量签到
 - ✅ **智能重试机制** - 指数退避 + 抖动，失败自动重试 3 次
 - ✅ **Token 失效检测** - HTTP 401/403 + 业务错误码 + 关键词多级检测
+
+### 🛒 什么值得买 (SMZDM)
+- ✅ **每日签到** - 自动签到获取金币、碎银、经验
+- ✅ **每日任务** - 自动完成浏览文章、分享、点赞、收藏、评论、关注、抽奖等任务
+- ✅ **全民众测能量值** - 自动完成能量值任务（需启用）
+- ✅ **转盘抽奖** - 自动参与会员中心转盘抽奖
+
+### 🔧 通用
 - ✅ **多种推送渠道** - PushPlus 微信推送、Bark iOS 推送
 - ✅ **仓库保活** - 每月自动调用 API 重置暂停计时器，防止 Actions 被禁用（无空提交）
 - ✅ **本地日志记录** - 自动保存运行日志到 `logs/` 目录
@@ -53,6 +63,21 @@
 | `BARK_GROUP` | Bark 消息分组 |
 | `BARK_ICON` | Bark 通知图标 URL |
 | `BARK_SOUND` | Bark 提示音 |
+
+### 2b. 配置 SMZDM Secrets
+
+| Secret | 必填 | 说明 |
+|--------|------|------|
+| `SMZDM_COOKIE` | ✅ | 什么值得买 Cookie（多账号用 `&` 分隔） |
+| `SMZDM_SK` | ❌ | SK 参数（可选，不填自动计算） |
+
+#### SMZDM 环境变量（Settings → Variables → Actions）
+
+| Variable | 说明 |
+|----------|------|
+| `SMZDM_TASK_TESTING` | 设为 `yes` 启用全民众测能量值任务 |
+| `SMZDM_COMMENT` | 评论任务默认文案（需 >10 字符） |
+| `SMZDM_CROWD_SILVER_5` | 设为 `yes` 启用 5 碎银子抽奖 |
 
 ### 3. 启用 Actions
 
@@ -116,17 +141,16 @@ NINEBOT_NAME           = 我的九号
 
 ## ⏰ 定时说明
 
-默认每天 **北京时间 07:37** 触发（避开整点高峰，整点的 Actions 任务排队严重、容易延迟或被跳过），脚本再随机延迟 0-10 分钟执行，避免每天固定时刻签到形成风控特征。
+每天两个工作流分别在两个时段执行：
 
-如需修改，编辑 `.github/workflows/sign.yml`：
+| 工作流 | 触发时间 | 说明 |
+|--------|---------|------|
+| **九号出行** (`sign.yml`) | 每天 **北京时间 07:37** | UTC 23:37，脚本随机延迟 0-10 分钟 |
+| **什么值得买** (`smzdm.yml`) | 每天 **北京时间 09:37** | UTC 01:37，错开避免 Runner 排队 |
 
-```yaml
-on:
-  schedule:
-    - cron: '37 23 * * *'  # UTC 23:37 = 北京时间 07:37，建议避开整点/半点
-```
+修改编辑 `.github/workflows/sign.yml` 或 `.github/workflows/smzdm.yml`。
 
-也支持手动触发：进入 Actions 页面，选择工作流，点击 **Run workflow**（手动触发无随机延迟）。
+也支持手动触发：进入 Actions 页面，选择对应工作流，点击 **Run workflow**。
 
 ---
 
@@ -135,9 +159,18 @@ on:
 ```
 .
 ├── .github/workflows/
-│   ├── sign.yml                # 签到工作流
+│   ├── sign.yml                # 九号出行签到工作流
+│   ├── smzdm.yml               # 什么值得买签到工作流
 │   └── keepalive.yml           # 仓库保活工作流（API 保活，无空提交）
-├── sign_ninebot.js              # 签到脚本（主程序）
+├── sign_ninebot.js              # 九号出行签到脚本
+├── smzdm/                       # 什么值得买签到脚本
+│   ├── env.js                  # 通用运行环境
+│   ├── bot.js                  # SMZDM 基类 + 签名 + 请求
+│   ├── library_task.js         # 任务逻辑库
+│   ├── smzdm_checkin.js        # 每日签到
+│   ├── smzdm_task.js           # 每日任务
+│   ├── smzdm_testing.js        # 全民众测能量值
+│   └── smzdm_lottery.js        # 转盘抽奖
 ├── package.json                 # 依赖配置
 ├── GITHUB_SETUP.md              # GitHub Actions 配置说明
 ├── .env.example                 # 环境变量示例
@@ -151,13 +184,22 @@ on:
 
 ## 🔧 技术特性
 
+### 🛴 九号出行
 - **Node.js 18+** - 使用 ES Module 模块化（Actions 环境使用 Node 24）
 - **签到+盲盒一体化** - 签到成功后自动领取盲盒并开启（rewardStatus===1）
 - **Token 多级校验** - HTTP 状态码 + 业务错误码（50001-50003）+ msg 关键词匹配
 - **指数退避重试** - 2s → 4s → 8s + 随机抖动
 - **随机延迟** - 定时任务启动后随机延迟 0-10 分钟，降低固定时间特征
 - **Axios 拦截器** - 统一错误处理，响应体级 Token 校验
-- **零冗余依赖** - 仅依赖 `axios` 和 `dotenv`
+
+### 🛒 什么值得买
+- **Cookie 认证+MD5 签名** - 基于 `got` 库、MD5 参数签名
+- **多账号支持** - `&` 分隔 Cookie 实现多账号
+- **任务全覆盖** - 浏览/分享/点赞/收藏/评论/关注/抽奖 10+ 种任务类型
+- **全民众测** - 支持能量值任务和必中券信息查询
+
+### 🔧 通用
+- **零冗余依赖** - 仅依赖 `axios`、`dotenv`、`got`、`crypto-js`、`tough-cookie`
 - **仓库自动保活** - 每月 15 号自动调用 workflow enable API 重置暂停计时器，历史零噪音
 - **本地日志持久化** - 每日独立日志文件
 

@@ -18,7 +18,7 @@ jobs:
     steps:
     - name: 重新启用定时工作流（重置 60 天暂停计时器）
       run: |
-        for wf in sign.yml keepalive.yml; do
+        for wf in sign.yml smzdm.yml keepalive.yml; do
           curl -sf -X PUT \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \

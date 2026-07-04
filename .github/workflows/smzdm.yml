@@ -1,0 +1,43 @@
+name: 什么值得买自动签到
+
+on:
+  schedule:
+    # 每天北京时间 07:37 运行 (UTC 23:37)，与 Ninebot 错开时间
+    - cron: '37 1 * * *'  # UTC 01:37 = 北京时间 09:37
+  workflow_dispatch:
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+    - name: 设置 Node.js
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      with:
+        node-version: '24'
+        cache: 'npm'
+
+    - name: 安装依赖
+      run: npm ci
+
+    - name: 运行签到
+      env:
+        TZ: Asia/Shanghai
+        SMZDM_COOKIE: ${{ secrets.SMZDM_COOKIE }}
+        SMZDM_SK: ${{ secrets.SMZDM_SK }}
+        SMZDM_TASK_TESTING: ${{ vars.SMZDM_TASK_TESTING }}
+        SMZDM_COMMENT: ${{ vars.SMZDM_COMMENT }}
+        SMZDM_CROWD_SILVER_5: ${{ vars.SMZDM_CROWD_SILVER_5 }}
+      run: |
+        echo "===== 什么值得买签到 ====="
+        node smzdm/smzdm_checkin.js
+        echo "===== 什么值得买每日任务 ====="
+        node smzdm/smzdm_task.js
+        echo "===== 什么值得买全民众测能量值 ====="
+        node smzdm/smzdm_testing.js
