@@ -2,22 +2,24 @@ name: 九号出行自动签到
 
 on:
   schedule:
-    # 每天北京时间 07:00 运行 (UTC 23:00)
-    - cron: '0 23 * * *'
+    # 每天北京时间 07:37 运行 (UTC 23:37)
+    # 避开整点：GitHub Actions 整点任务排队严重，容易大幅延迟甚至被跳过
+    - cron: '37 23 * * *'
   workflow_dispatch:
     # 支持手动触发
 
 jobs:
   sign:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 脚本在定时触发时会随机延迟 0-10 分钟，超时需覆盖延迟 + 重试
+    timeout-minutes: 25
     permissions:
       contents: read
 
     steps:
     - name: 检出代码
       uses: actions/checkout@v4
-      
+
     - name: 设置 Node.js
       uses: actions/setup-node@v4
       with:
@@ -26,9 +28,11 @@ jobs:
 
     - name: 安装依赖
       run: npm ci
-      
+
     - name: 运行签到
       env:
+        # runner 默认 UTC，统一为北京时间，保证日志和推送里的时间正确
+        TZ: Asia/Shanghai
         NINEBOT_DEVICE_ID: ${{ secrets.NINEBOT_DEVICE_ID }}
         NINEBOT_AUTHORIZATION: ${{ secrets.NINEBOT_AUTHORIZATION }}
         NINEBOT_NAME: ${{ secrets.NINEBOT_NAME }}

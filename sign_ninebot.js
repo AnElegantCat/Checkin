@@ -135,7 +135,11 @@ function normalizeAccount(acc, index) {
 
     const name = String(acc.name || `账号${index + 1}`).trim();
     const deviceId = String(acc.deviceId || acc.device_id || acc.DeviceId || "").trim();
-    const authorization = String(acc.authorization || acc.Authorization || acc.token || acc.Token || "").trim();
+    let authorization = String(acc.authorization || acc.Authorization || acc.token || acc.Token || "").trim();
+    // 漏写 Bearer 前缀是最常见的配置错误，自动补全
+    if (authorization && !/^bearer\s/i.test(authorization)) {
+        authorization = `Bearer ${authorization}`;
+    }
     const missing = [];
     if (!deviceId) missing.push("deviceId");
     if (!authorization) missing.push("authorization");
@@ -147,16 +151,17 @@ function normalizeAccount(acc, index) {
 
 // Token 有效性校验
 function checkTokenValid(data) {
-    if (!data) return true;
+    if (!data || typeof data !== "object") return true;
     const invalidCodes = [401, 403, 50001, 50002, 50003];
-    const invalidMsgs = ["无效", "过期", "未登录", "授权", "token", "authorization", "请重新登录"];
-    
+
     // 检查错误码
     if (invalidCodes.includes(data.code)) return false;
-    
-    // 检查响应消息关键词
-    const respStr = JSON.stringify(data).toLowerCase();
-    return !invalidMsgs.some(msg => respStr.includes(msg.toLowerCase()));
+
+    // 仅检查业务提示信息 msg，避免扫描整个响应体时被正常数据（如 xxToken 字段、"过期时间"文案）误伤
+    const msg = String(data.msg || "").toLowerCase();
+    if (!msg) return true;
+    const invalidMsgs = ["token", "authorization", "未登录", "重新登录", "登录过期", "登录失效", "授权"];
+    return !invalidMsgs.some(kw => msg.includes(kw));
 }
 
 // ==================== 核心类 ====================
@@ -212,7 +217,8 @@ class NineBot {
             error => {
                 if (error.response) {
                     const { status, data } = error.response;
-                    log("WARN", `HTTP ${status}`, { url: error.config?.url, data });
+                    // 只记录 code/msg，不 dump 完整响应体（Actions 日志公开可见）
+                    log("WARN", `HTTP ${status}`, { url: error.config?.url, code: data?.code, msg: data?.msg });
                     
                     // HTTP 级 Token 失效检测
                     if (status === 401 || status === 403) {
@@ -471,18 +477,23 @@ class PushNotifier {
     static async bark(title, message) {
         const key = process.env.BARK_KEY;
         if (!key) return { success: false, skipped: true };
-        
+
         const url = (process.env.BARK_URL || "https://api.day.app").replace(/\/$/, "");
-        const params = new URLSearchParams();
-        
-        if (process.env.BARK_GROUP) params.append("group", process.env.BARK_GROUP);
-        if (process.env.BARK_ICON) params.append("icon", process.env.BARK_ICON);
-        if (process.env.BARK_SOUND) params.append("sound", process.env.BARK_SOUND);
-        
+        // 用 POST 发送，消息放请求体，避免多账号长消息超出 URL 长度限制
+        const payload = { title, body: message };
+        if (process.env.BARK_GROUP) payload.group = process.env.BARK_GROUP;
+        if (process.env.BARK_ICON) payload.icon = process.env.BARK_ICON;
+        if (process.env.BARK_SOUND) payload.sound = process.env.BARK_SOUND;
+
         try {
-            const queryString = params.toString();
-            const fullUrl = `${url}/${key}/${encodeURIComponent(title)}/${encodeURIComponent(message)}${queryString ? '?' + queryString : ''}`;
-            await axios.get(fullUrl, { timeout: 10000 });
+            const response = await axios.post(`${url}/${key}`, payload, {
+                timeout: 10000,
+                maxContentLength: CONFIG.MAX_RESPONSE_BYTES,
+                maxBodyLength: CONFIG.MAX_RESPONSE_BYTES,
+            });
+            if (response.data?.code !== 200) {
+                throw new Error(response.data?.message || `Bark返回异常: ${safeJsonStringify(response.data)}`);
+            }
             log("INFO", "[Bark] 推送成功");
             return { success: true };
         } catch (error) {
@@ -534,14 +545,24 @@ class PushNotifier {
 }
 
 // ==================== 入口 ====================
+// Actions 定时任务随机延迟 0-10 分钟，避免每天固定时刻从数据中心 IP 签到形成风控特征
+// 仅在 schedule 触发时生效，手动触发和本地运行不延迟
+async function randomStartupDelay() {
+    if (process.env.GITHUB_EVENT_NAME !== "schedule") return;
+    const delay = Math.floor(Math.random() * 10 * 60 * 1000);
+    log("INFO", `随机延迟 ${Math.round(delay / 1000)} 秒后开始签到`);
+    await sleep(delay);
+}
+
 async function init() {
     // 初始化日志目录
     initLogDir();
-    
+
     log("INFO", "🚀 九号出行自动签到启动");
-    
+
     try {
         checkSecrets();
+        await randomStartupDelay();
         
         // 解析账号配置
         let accounts = [];
@@ -572,8 +593,14 @@ async function init() {
         
         for (const acc of accounts) {
             const bot = new NineBot(acc.deviceId, acc.authorization, acc.name);
-            const success = await bot.run();
-            results.push({ 
+            // 单个账号异常不影响其余账号
+            let success = false;
+            try {
+                success = await bot.run();
+            } catch (error) {
+                log("ERROR", `[${acc.name}] 运行异常`, { error: error.message });
+            }
+            results.push({
                 name: acc.name, 
                 success, 
                 consecutiveDays: bot.consecutiveDays,
@@ -591,19 +618,16 @@ async function init() {
         }
         
         // 构建简洁的推送消息
-        const now = new Date();
-        const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-        
+        const timeStr = now();
+
         const title = "九号出行签到结果";
         const message = results.map(r => {
             const emoji = r.signSuccess ? "✅" : "❌";
-            const statusEmoji = r.signSuccess ? "🎉" : "❌";
-            const statusText = r.isSignedToday ? "已签到" : (r.signSuccess ? "签到成功" : "签到失败");
-            let parts = [
+            const statusText = r.isSignedToday ? "今日已签到" : (r.signSuccess ? "签到成功 🎉" : "签到失败");
+            const parts = [
                 `${emoji} ${r.name}`,
-                `连续签到天数: ${r.consecutiveDays}天`,
-                `今日签到状态: ${statusText}${statusEmoji}`,
-                `签到结果: ${statusText}${statusEmoji}${statusEmoji}`,
+                `连续签到: ${r.consecutiveDays} 天`,
+                `签到结果: ${statusText}`,
             ];
             // 盲盒信息
             if (r.signSuccess && r.blindBoxSummary) {

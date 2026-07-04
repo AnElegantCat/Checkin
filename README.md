@@ -34,7 +34,7 @@
 | Secret | 必填 | 说明 |
 |--------|------|------|
 | `NINEBOT_DEVICE_ID` | ✅ | 设备 ID |
-| `NINEBOT_AUTHORIZATION` | ✅ | Bearer Token（含 `Bearer` 前缀） |
+| `NINEBOT_AUTHORIZATION` | ✅ | Bearer Token（Bearer 前缀可省略，脚本会自动补全） |
 | `NINEBOT_NAME` | ❌ | 账号名称（用于推送显示） |
 
 #### 多账号模式（二选一）
@@ -57,6 +57,8 @@
 ### 3. 启用 Actions
 
 进入 **Actions** 页面，点击 **Enable** 启用工作流。
+
+> 💡 保活工作流（keepalive.yml）默认只在源仓库运行，fork 仓库不会自动空提交（避免与上游产生分叉）。fork 用户请留意 GitHub「定时任务因仓库不活跃被暂停」的邮件提醒并手动恢复，或删除 keepalive.yml 中的 `if: github.event.repository.fork == false` 一行来启用保活。
 
 ---
 
@@ -114,17 +116,17 @@ NINEBOT_NAME           = 我的九号
 
 ## ⏰ 定时说明
 
-默认每天 **北京时间 07:00** 运行。
+默认每天 **北京时间 07:37** 触发（避开整点高峰，整点的 Actions 任务排队严重、容易延迟或被跳过），脚本再随机延迟 0-10 分钟执行，避免每天固定时刻签到形成风控特征。
 
 如需修改，编辑 `.github/workflows/sign.yml`：
 
 ```yaml
 on:
   schedule:
-    - cron: '0 23 * * *'  # UTC 23:00 = 北京时间 07:00
+    - cron: '37 23 * * *'  # UTC 23:37 = 北京时间 07:37，建议避开整点/半点
 ```
 
-也支持手动触发：进入 Actions 页面，选择工作流，点击 **Run workflow**。
+也支持手动触发：进入 Actions 页面，选择工作流，点击 **Run workflow**（手动触发无随机延迟）。
 
 ---
 
@@ -149,13 +151,14 @@ on:
 
 ## 🔧 技术特性
 
-- **Node.js 24** - 使用 ES Module 模块化
+- **Node.js 18+** - 使用 ES Module 模块化（Actions 环境使用 Node 24）
 - **签到+盲盒一体化** - 签到成功后自动领取盲盒并开启（rewardStatus===1）
-- **Token 多级校验** - HTTP 状态码 + 业务错误码（50001-50003）+ 关键词匹配
+- **Token 多级校验** - HTTP 状态码 + 业务错误码（50001-50003）+ msg 关键词匹配
 - **指数退避重试** - 2s → 4s → 8s + 随机抖动
+- **随机延迟** - 定时任务启动后随机延迟 0-10 分钟，降低固定时间特征
 - **Axios 拦截器** - 统一错误处理，响应体级 Token 校验
 - **零冗余依赖** - 仅依赖 `axios` 和 `dotenv`
-- **仓库自动保活** - 每月 15 号 + 月末自动空 commit，防止 Actions 被禁用
+- **仓库自动保活** - 每月 15 号 + 月末最后一天自动空 commit，防止 Actions 被禁用
 - **本地日志持久化** - 每日独立日志文件
 
 ---

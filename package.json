@@ -1,6 +1,6 @@
 {
     "name": "ninebot-auto-sign",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "type": "module",
     "description": "九号出行自动签到脚本（支持GitHub Actions和青龙面板）",
     "main": "sign_ninebot.js",

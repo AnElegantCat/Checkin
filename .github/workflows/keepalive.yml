@@ -2,14 +2,16 @@ name: Keep Alive
 
 on:
   schedule:
-    # 每月15号和最后一天 UTC 00:00（北京时间 08:00）各运行一次
-    - cron: '0 0 15 * *'
-    - cron: '0 0 28-31 * *'
+    # 每月 15 号 UTC 00:41（北京时间 08:41）运行一次
+    # 28-31 每天都会触发，由下方步骤判断是否为当月最后一天，只在最后一天提交
+    - cron: '41 0 15 * *'
+    - cron: '41 0 28-31 * *'
   workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
+    # 只在源仓库运行：fork 仓库空提交会与上游产生分叉，影响同步更新
     if: github.event.repository.fork == false
     permissions:
       contents: write
@@ -19,9 +21,21 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: 判断是否执行保活
+      id: check
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        elif [ "$(date -u +%d)" = "15" ] || [ "$(date -u -d tomorrow +%d)" = "01" ]; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "run=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: 空提交保活
+      if: steps.check.outputs.run == 'true'
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git commit --allow-empty -m "chore: keep alive $(date +%Y-%m-%d)"
+        git commit --allow-empty -m "chore: keep alive $(date -u +%Y-%m-%d)"
         git push
