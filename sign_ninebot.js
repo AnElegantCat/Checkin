@@ -16,7 +16,6 @@ const CONFIG = {
     MAX_RESPONSE_BYTES: 1024 * 1024,
     LOG_DIR: join(__dirname, "logs"),
     LOG_KEEP_DAYS: 30,
-    TOKEN_WARN_DAYS: 14,
     TOKEN_INVALID_ERROR: "Token失效/未授权，请重新抓包更新 authorization",
 };
 
@@ -166,7 +165,7 @@ function normalizeAccount(acc, index) {
 }
 
 // 无验证解码 JWT 的 exp，得到剩余天数（负数=已过期）；非 JWT 或无 exp 返回 null
-// 这类脚本最常见的故障是 token 静默过期，提前预警比事后失败有用得多
+// 仅用于日志备查和失败时的原因提示——该网关实测不校验 exp，正常签到时不打扰用户
 function getTokenDaysLeft(token) {
     try {
         const payload = token.split(".")[1];
@@ -203,7 +202,8 @@ class NineBot {
         this.consecutiveDays = 0;
         this.isSignedToday = false;
         this.signSuccess = false;
-        this.tokenWarning = "";
+        this.tokenExpDays = null;
+        this.failReason = "";
 
         // 盲盒相关
         this.blindBoxResults = [];
@@ -451,24 +451,19 @@ class NineBot {
     async run() {
         log("INFO", `${"=".repeat(40)}\n  账号: ${this.name}\n${"=".repeat(40)}`);
 
-        // Token 过期预警
+        // Token exp 仅记日志备查：实测该网关不强制校验 exp（过期 60+ 天仍可用），
+        // 签到正常时不在推送里提任何 token 信息，失败时才附带原因
         const daysLeft = getTokenDaysLeft(this.authorization);
+        this.tokenExpDays = daysLeft;
         if (daysLeft !== null) {
-            if (daysLeft < 0) {
-                this.tokenWarning = `⚠️ Token 已过期 ${-daysLeft} 天，请重新抓包更新`;
-                log("WARN", `[${this.name}] ${this.tokenWarning}`);
-            } else if (daysLeft <= CONFIG.TOKEN_WARN_DAYS) {
-                this.tokenWarning = `⚠️ Token 将于 ${daysLeft} 天后过期，请尽快重新抓包更新`;
-                log("WARN", `[${this.name}] ${this.tokenWarning}`);
-            } else {
-                log("INFO", `[${this.name}] Token 有效期剩余 ${daysLeft} 天`);
-            }
+            log("INFO", `[${this.name}] Token exp ${daysLeft < 0 ? `已过 ${-daysLeft} 天（网关未强制校验，不影响使用）` : `剩余 ${daysLeft} 天`}`);
         }
 
         // 1. 获取当前状态
         const statusResult = await this.getStatus();
         
         if (!statusResult.success) {
+            this.failReason = statusResult.error;
             this.addLog("验证结果", `❌ ${statusResult.error}`);
             log("ERROR", `[${this.name}] 验证失败: ${statusResult.error}`);
             return false;
@@ -500,6 +495,7 @@ class NineBot {
                     this.addLog("连续签到", `${this.consecutiveDays} 天`);
                 }
             } else {
+                this.failReason = signResult.error;
                 this.addLog("签到结果", `❌ ${signResult.error}`);
                 log("ERROR", `[${this.name}] 签到失败: ${signResult.error}`);
                 return false;
@@ -659,6 +655,7 @@ async function init() {
             try {
                 success = await bot.run();
             } catch (error) {
+                bot.failReason = bot.failReason || error.message;
                 log("ERROR", `[${acc.name}] 运行异常`, { error: error.message });
             }
             results.push({
@@ -669,7 +666,8 @@ async function init() {
                 signSuccess: bot.signSuccess,
                 blindBoxResults: bot.blindBoxResults,
                 blindBoxSummary: bot.blindBoxSummary,
-                tokenWarning: bot.tokenWarning,
+                tokenExpDays: bot.tokenExpDays,
+                failReason: bot.failReason,
             });
             if (success) successCount++;
             
@@ -698,8 +696,14 @@ async function init() {
             if (r.blindBoxResults && r.blindBoxResults.length > 0) {
                 parts.push(`开箱: ${r.blindBoxResults.join(", ")}`);
             }
-            if (r.tokenWarning) {
-                parts.push(r.tokenWarning);
+            // 仅失败时说明原因，正常签到不打扰
+            if (!r.signSuccess) {
+                if (r.failReason) {
+                    parts.push(`失败原因: ${r.failReason}`);
+                }
+                if (r.tokenExpDays !== null && r.tokenExpDays < 0) {
+                    parts.push(`提示: Token exp 已过 ${-r.tokenExpDays} 天，若为授权失效请重新抓包更新`);
+                }
             }
             return parts.join("\n");
         }).join("\n\n");
