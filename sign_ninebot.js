@@ -678,8 +678,6 @@ async function init() {
         }
         
         // 构建简洁的推送消息
-        const timeStr = now();
-
         const title = "九号出行签到结果";
         const message = results.map(r => {
             const emoji = r.signSuccess ? "✅" : "❌";
@@ -710,8 +708,8 @@ async function init() {
         
         log("INFO", `${"-".repeat(40)}\n汇总: ${successCount}/${accounts.length} 成功\n${"-".repeat(40)}`);
         
-        // 发送推送
-        await PushNotifier.send(title, `${accounts[0]?.name || '用户'} ${timeStr}\n\n${message}`);
+        // 发送推送（推送渠道自带时间戳，正文不再重复账号名+时间头）
+        await PushNotifier.send(title, message);
         
         // 如果有失败，返回非零退出码
         if (successCount < accounts.length) {
