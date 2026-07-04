@@ -1,8 +1,9 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { Agent as HttpsAgent } from "https";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { existsSync, appendFileSync, mkdirSync } from "fs";
+import { existsSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, ".env") });
@@ -14,8 +15,13 @@ const CONFIG = {
     REQUEST_TIMEOUT: 20000,
     MAX_RESPONSE_BYTES: 1024 * 1024,
     LOG_DIR: join(__dirname, "logs"),
+    LOG_KEEP_DAYS: 30,
+    TOKEN_WARN_DAYS: 14,
     TOKEN_INVALID_ERROR: "Token失效/未授权，请重新抓包更新 authorization",
 };
+
+// 复用 TCP 连接：一次运行要连续请求同一网关 4-5 次，keep-alive 省去重复握手
+const sharedHttpsAgent = new HttpsAgent({ keepAlive: true });
 
 // 初始化日志目录
 function initLogDir() {
@@ -23,8 +29,20 @@ function initLogDir() {
         if (!existsSync(CONFIG.LOG_DIR)) {
             mkdirSync(CONFIG.LOG_DIR, { recursive: true });
         }
+        cleanOldLogs();
     } catch (e) {
         console.error("[ERROR] 创建日志目录失败:", e.message);
+    }
+}
+
+// 按文件名日期清理过期日志，本地长期运行不至于无限累积
+function cleanOldLogs() {
+    const cutoff = Date.now() - CONFIG.LOG_KEEP_DAYS * 86400000;
+    for (const f of readdirSync(CONFIG.LOG_DIR)) {
+        const m = f.match(/^sign_(\d{4}-\d{2}-\d{2})\.log$/);
+        if (m && new Date(`${m[1]}T00:00:00`).getTime() < cutoff) {
+            try { unlinkSync(join(CONFIG.LOG_DIR, f)); } catch { /* 清理失败不影响主流程 */ }
+        }
     }
 }
 
@@ -147,6 +165,19 @@ function normalizeAccount(acc, index) {
     return { name, deviceId, authorization };
 }
 
+// 无验证解码 JWT 的 exp，得到剩余天数（负数=已过期）；非 JWT 或无 exp 返回 null
+// 这类脚本最常见的故障是 token 静默过期，提前预警比事后失败有用得多
+function getTokenDaysLeft(token) {
+    try {
+        const payload = token.split(".")[1];
+        const json = JSON.parse(Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+        if (typeof json.exp !== "number") return null;
+        return Math.floor((json.exp * 1000 - Date.now()) / 86400000);
+    } catch {
+        return null;
+    }
+}
+
 // Token 有效性校验
 function checkTokenValid(data) {
     if (!data || typeof data !== "object") return true;
@@ -172,14 +203,16 @@ class NineBot {
         this.consecutiveDays = 0;
         this.isSignedToday = false;
         this.signSuccess = false;
+        this.tokenWarning = "";
 
         // 盲盒相关
         this.blindBoxResults = [];
         this.blindBoxSummary = "";
-        
+
         // 创建 axios 实例
         this.client = axios.create({
             timeout: CONFIG.REQUEST_TIMEOUT,
+            httpsAgent: sharedHttpsAgent,
             maxContentLength: CONFIG.MAX_RESPONSE_BYTES,
             maxBodyLength: CONFIG.MAX_RESPONSE_BYTES,
             headers: {
@@ -269,22 +302,36 @@ class NineBot {
                     data,
                     params: method === "get" ? { t: Date.now() } : undefined,
                 });
-                
-                return response.data;
+
+                const body = response.data;
+                // 网关偶发返回 HTTP 200 + code≠0（如"系统错误"），对幂等 GET 做业务层重试，
+                // 避免一次抽风就判整轮失败并推送误报；POST（签到/领取）不自动重试
+                if (method === "get" && body && typeof body === "object" &&
+                    body.code !== undefined && body.code !== 0 && attempt < CONFIG.MAX_RETRIES) {
+                    const delay = getRetryDelay(attempt);
+                    log("WARN", `[${this.name}] 业务错误，${delay}ms 后重试`, { code: body.code, msg: body.msg });
+                    await sleep(delay);
+                    continue;
+                }
+
+                return body;
             } catch (error) {
                 lastError = error;
                 const isLastAttempt = attempt === CONFIG.MAX_RETRIES;
-                
+
                 if (error.noRetry) {
                     throw error;
                 }
-                
+
                 if (!shouldRetryRequest(error)) {
                     throw error;
                 }
 
                 if (!isLastAttempt) {
-                    const delay = getRetryDelay(attempt);
+                    // 该网关对新建连接的首个请求常见 ECONNRESET（连接级抖动），快速重试即可恢复，不必长退避
+                    const delay = error.code === "ECONNRESET" && attempt === 1
+                        ? 500
+                        : getRetryDelay(attempt);
                     log("WARN", `[${this.name}] 请求失败，${delay}ms 后重试`, { error: error.message });
                     await sleep(delay);
                 }
@@ -332,7 +379,9 @@ class NineBot {
                 log("INFO", `[${this.name}] ✅ 盲盒领取成功`);
                 return { success: true };
             }
-            log("INFO", `[${this.name}] 盲盒: ${data.msg || "已领取/无资格"}`);
+            // 网关在无盒可领/已领取时也返回"系统错误"，属正常业务响应，映射为友好提示
+            const friendly = data.msg === "系统错误" ? "今日无可领盲盒（或已领取）" : (data.msg || "已领取/无资格");
+            log("INFO", `[${this.name}] 盲盒: ${friendly}`);
             return { success: false, error: data.msg };
         } catch (error) {
             log("WARN", `[${this.name}] 盲盒领取异常: ${error.message}`);
@@ -401,7 +450,21 @@ class NineBot {
     // 主流程
     async run() {
         log("INFO", `${"=".repeat(40)}\n  账号: ${this.name}\n${"=".repeat(40)}`);
-        
+
+        // Token 过期预警
+        const daysLeft = getTokenDaysLeft(this.authorization);
+        if (daysLeft !== null) {
+            if (daysLeft < 0) {
+                this.tokenWarning = `⚠️ Token 已过期 ${-daysLeft} 天，请重新抓包更新`;
+                log("WARN", `[${this.name}] ${this.tokenWarning}`);
+            } else if (daysLeft <= CONFIG.TOKEN_WARN_DAYS) {
+                this.tokenWarning = `⚠️ Token 将于 ${daysLeft} 天后过期，请尽快重新抓包更新`;
+                log("WARN", `[${this.name}] ${this.tokenWarning}`);
+            } else {
+                log("INFO", `[${this.name}] Token 有效期剩余 ${daysLeft} 天`);
+            }
+        }
+
         // 1. 获取当前状态
         const statusResult = await this.getStatus();
         
@@ -599,13 +662,14 @@ async function init() {
                 log("ERROR", `[${acc.name}] 运行异常`, { error: error.message });
             }
             results.push({
-                name: acc.name, 
-                success, 
+                name: acc.name,
+                success,
                 consecutiveDays: bot.consecutiveDays,
                 isSignedToday: bot.isSignedToday,
                 signSuccess: bot.signSuccess,
                 blindBoxResults: bot.blindBoxResults,
                 blindBoxSummary: bot.blindBoxSummary,
+                tokenWarning: bot.tokenWarning,
             });
             if (success) successCount++;
             
@@ -633,6 +697,9 @@ async function init() {
             }
             if (r.blindBoxResults && r.blindBoxResults.length > 0) {
                 parts.push(`开箱: ${r.blindBoxResults.join(", ")}`);
+            }
+            if (r.tokenWarning) {
+                parts.push(r.tokenWarning);
             }
             return parts.join("\n");
         }).join("\n\n");

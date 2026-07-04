@@ -1,41 +1,27 @@
 name: Keep Alive
 
+# GitHub 会在仓库 60 天无活动后暂停定时工作流。
+# 用官方 enable API 重置计时器即可，不再制造空提交污染历史。
 on:
   schedule:
-    # 每月 15 号 UTC 00:41（北京时间 08:41）运行一次
-    # 28-31 每天都会触发，由下方步骤判断是否为当月最后一天，只在最后一天提交
+    # 每月 15 号 UTC 00:41（北京时间 08:41）
     - cron: '41 0 15 * *'
-    - cron: '41 0 28-31 * *'
   workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
-    # 只在源仓库运行：fork 仓库空提交会与上游产生分叉，影响同步更新
+    # 只在源仓库运行；fork 用户请留意 GitHub 的暂停提醒邮件并手动恢复
     if: github.event.repository.fork == false
     permissions:
-      contents: write
+      actions: write
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: 判断是否执行保活
-      id: check
+    - name: 重新启用定时工作流（重置 60 天暂停计时器）
       run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "run=true" >> "$GITHUB_OUTPUT"
-        elif [ "$(date -u +%d)" = "15" ] || [ "$(date -u -d tomorrow +%d)" = "01" ]; then
-          echo "run=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "run=false" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: 空提交保活
-      if: steps.check.outputs.run == 'true'
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git commit --allow-empty -m "chore: keep alive $(date -u +%Y-%m-%d)"
-        git push
+        for wf in sign.yml keepalive.yml; do
+          curl -sf -X PUT \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$wf/enable"
+          echo "enabled: $wf"
+        done

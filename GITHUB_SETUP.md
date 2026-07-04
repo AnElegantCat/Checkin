@@ -52,7 +52,7 @@ git push -u origin main
 
 进入仓库 → **Actions** 标签 → 点击 **I understand my workflows, go ahead and enable them**
 
-> 💡 保活工作流（keepalive.yml）默认只在源仓库运行，fork 仓库不会自动空提交（避免与上游产生分叉）。fork 用户请留意 GitHub「定时任务因仓库不活跃被暂停」的邮件提醒并手动恢复，或删除 keepalive.yml 中的 `if: github.event.repository.fork == false` 一行来启用保活。
+> 💡 保活工作流（keepalive.yml）每月调用一次 GitHub 官方 API 重新启用定时任务，重置「60 天不活跃自动暂停」计时器，不产生任何提交。默认只在源仓库运行；fork 用户可删除其中 `if: github.event.repository.fork == false` 一行来启用。
 
 ### 4. 测试运行
 

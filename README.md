@@ -14,7 +14,7 @@
 - ✅ **智能重试机制** - 指数退避 + 抖动，失败自动重试 3 次
 - ✅ **Token 失效检测** - HTTP 401/403 + 业务错误码 + 关键词多级检测
 - ✅ **多种推送渠道** - PushPlus 微信推送、Bark iOS 推送
-- ✅ **仓库保活** - 自动空提交防止 GitHub Actions 被禁用
+- ✅ **仓库保活** - 每月自动调用 API 重置暂停计时器，防止 Actions 被禁用（无空提交）
 - ✅ **本地日志记录** - 自动保存运行日志到 `logs/` 目录
 
 ---
@@ -58,7 +58,7 @@
 
 进入 **Actions** 页面，点击 **Enable** 启用工作流。
 
-> 💡 保活工作流（keepalive.yml）默认只在源仓库运行，fork 仓库不会自动空提交（避免与上游产生分叉）。fork 用户请留意 GitHub「定时任务因仓库不活跃被暂停」的邮件提醒并手动恢复，或删除 keepalive.yml 中的 `if: github.event.repository.fork == false` 一行来启用保活。
+> 💡 保活工作流（keepalive.yml）每月调用一次 GitHub 官方 API 重新启用定时任务，重置「60 天不活跃自动暂停」计时器，不产生任何提交。默认只在源仓库运行；fork 用户可删除其中 `if: github.event.repository.fork == false` 一行来启用。
 
 ---
 
@@ -136,7 +136,7 @@ on:
 .
 ├── .github/workflows/
 │   ├── sign.yml                # 签到工作流
-│   └── keepalive.yml           # 仓库保活工作流
+│   └── keepalive.yml           # 仓库保活工作流（API 保活，无空提交）
 ├── sign_ninebot.js              # 签到脚本（主程序）
 ├── package.json                 # 依赖配置
 ├── GITHUB_SETUP.md              # GitHub Actions 配置说明
@@ -158,7 +158,7 @@ on:
 - **随机延迟** - 定时任务启动后随机延迟 0-10 分钟，降低固定时间特征
 - **Axios 拦截器** - 统一错误处理，响应体级 Token 校验
 - **零冗余依赖** - 仅依赖 `axios` 和 `dotenv`
-- **仓库自动保活** - 每月 15 号 + 月末最后一天自动空 commit，防止 Actions 被禁用
+- **仓库自动保活** - 每月 15 号自动调用 workflow enable API 重置暂停计时器，历史零噪音
 - **本地日志持久化** - 每日独立日志文件
 
 ---
