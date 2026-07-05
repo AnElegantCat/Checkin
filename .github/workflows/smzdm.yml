@@ -1,10 +1,14 @@
 name: 什么值得买自动签到
 
 on:
-  schedule:
-    # 每天北京时间 09:37 运行 (UTC 01:37)，与 Ninebot 的 07:37 错开
-    # 避开整点：GitHub Actions 整点任务排队严重，容易大幅延迟甚至被跳过
-    - cron: '37 1 * * *'
+  # 定时调度暂停中：SMZDM 风控对 GitHub Actions 出口 IP 稳定返回 11111
+  # （"貌似网络不太稳定"），2026-07-05 两次独立 runner 复现。恢复前需要
+  # 从 App 抓包补充 SMZDM_SK（及含 device_id 的完整 cookie），或改用国内
+  # 出口；修好后用 workflow_dispatch 验证，再取消下面的注释。
+  # schedule:
+  #   # 每天北京时间 09:37 运行 (UTC 01:37)，与 Ninebot 的 07:37 错开
+  #   # 避开整点：GitHub Actions 整点任务排队严重，容易大幅延迟甚至被跳过
+  #   - cron: '37 1 * * *'
   workflow_dispatch:
 
 jobs:
