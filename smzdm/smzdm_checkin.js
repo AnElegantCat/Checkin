@@ -7,6 +7,7 @@ cron: 10 8 * * *
 
 const Env = require('./env');
 const { SmzdmBot, requestApi, removeTags, getEnvCookies, wait } = require('./bot');
+const { notifyFail } = require('./notify');
 const CryptoJS = require('crypto-js');
 
 const $ = new Env('smzdm 签到');
@@ -69,7 +70,7 @@ class SmzdmCheckinBot extends SmzdmBot {
 
       return {
         isSuccess,
-        msg: '签到失败！'
+        msg: `签到失败！${removeTags(String(response))}`
       };
     }
   }
@@ -231,11 +232,12 @@ function getDeviceId(cookie) {
 }
 
 !(async () => {
-  $.checkSecrets(['SMZDM_COOKIE']);
   const cookies = getEnvCookies();
 
   if (cookies === false) {
     $.log('\n请先设置 SMZDM_COOKIE 环境变量');
+    process.exitCode = 1;
+    await notifyFail('什么值得买签到失败', 'SMZDM_COOKIE 未配置或已丢失');
 
     return;
   }
@@ -255,6 +257,7 @@ function getDeviceId(cookie) {
   }
 
   let notifyContent = '';
+  const failures = [];
 
   for (let i = 0; i < cookies.length; i++) {
     const cookie = cookies[i];
@@ -280,11 +283,23 @@ function getDeviceId(cookie) {
     const msg = await bot.run();
 
     notifyContent += sep + msg + '\n';
+
+    // 判定以签到本身为准：奖励/查询类小失败只留在日志，不打扰
+    if (!msg.includes('签到成功')) {
+      failures.push(cookies.length > 1 ? `账号${i + 1}: ${msg.trim()}` : msg.trim());
+    }
+  }
+
+  if (failures.length > 0) {
+    process.exitCode = 1;
+    await notifyFail('什么值得买签到失败', failures.join('\n'));
   }
 
   $.log();
-})().catch((e) => {
-  $.log('', `❌ ${$.name}, 失败! 原因: ${e}!`, '')
+})().catch(async (e) => {
+  $.log('', `❌ ${$.name}, 失败! 原因: ${e}!`, '');
+  process.exitCode = 1;
+  await notifyFail('什么值得买签到失败', `脚本异常: ${e}`);
 }).finally(() => {
   $.done();
 });

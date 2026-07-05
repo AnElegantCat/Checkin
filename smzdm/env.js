@@ -399,7 +399,7 @@ function Env(t, e) {
       if (missingKeys.length > 0) {
         this.log(`❌ 错误: 未找到必要的环境变量: ${missingKeys.join(", ")}`);
         this.log("脚本停止执行。请在 GitHub Secrets 中配置这些值。");
-        process.exit(0);
+        process.exit(1);
       }
     }
     logErr(t) {

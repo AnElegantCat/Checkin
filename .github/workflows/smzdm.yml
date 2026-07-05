@@ -2,8 +2,9 @@ name: 什么值得买自动签到
 
 on:
   schedule:
-    # 每天北京时间 07:37 运行 (UTC 23:37)，与 Ninebot 错开时间
-    - cron: '37 1 * * *'  # UTC 01:37 = 北京时间 09:37
+    # 每天北京时间 09:37 运行 (UTC 01:37)，与 Ninebot 的 07:37 错开
+    # 避开整点：GitHub Actions 整点任务排队严重，容易大幅延迟甚至被跳过
+    - cron: '37 1 * * *'
   workflow_dispatch:
 
 jobs:
@@ -34,6 +35,7 @@ jobs:
         SMZDM_TASK_TESTING: ${{ vars.SMZDM_TASK_TESTING }}
         SMZDM_COMMENT: ${{ vars.SMZDM_COMMENT }}
         SMZDM_CROWD_SILVER_5: ${{ vars.SMZDM_CROWD_SILVER_5 }}
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
       run: |
         echo "===== 什么值得买签到 ====="
         node smzdm/smzdm_checkin.js
