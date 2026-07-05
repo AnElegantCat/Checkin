@@ -17,7 +17,7 @@
 
 ### 1. Fork 仓库到个人账号
 
-访问 https://github.com/AnElegantCat/NinebotCheckin ，点击右上角 **Fork** 按钮。
+访问 https://github.com/AnElegantCat/Checkin ，点击右上角 **Fork** 按钮。
 
 或者将本地配置好的仓库推送到你的 GitHub：
 

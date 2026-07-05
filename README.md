@@ -1,9 +1,9 @@
-# NinebotCheckin - 九号出行 & 什么值得买 自动签到
+# Checkin - 九号出行 & 什么值得买 自动签到
 
 🛴 **九号出行（Ninebot）自动签到** + 🛒 **什么值得买（SMZDM）自动签到** - 基于 GitHub Actions 实现每日自动签到 + 任务/盲盒/抽奖，支持多账号、多推送渠道。
 
-[![Ninebot Actions](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/sign.yml/badge.svg)](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/sign.yml)
-[![SMZDM Actions](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/smzdm.yml/badge.svg)](https://github.com/AnElegantCat/NinebotCheckin/actions/workflows/smzdm.yml)
+[![Ninebot Actions](https://github.com/AnElegantCat/Checkin/actions/workflows/sign.yml/badge.svg)](https://github.com/AnElegantCat/Checkin/actions/workflows/sign.yml)
+[![SMZDM Actions](https://github.com/AnElegantCat/Checkin/actions/workflows/smzdm.yml/badge.svg)](https://github.com/AnElegantCat/Checkin/actions/workflows/smzdm.yml)
 
 ---
 
