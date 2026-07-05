@@ -19,8 +19,6 @@
 ### 🛒 什么值得买 (SMZDM)
 - ✅ **每日签到** - 自动签到获取金币、碎银、经验
 - ✅ **每日任务** - 自动完成浏览文章、分享、点赞、收藏、评论、关注、抽奖等任务
-- ✅ **全民众测能量值** - 自动完成能量值任务（需启用）
-- ✅ **转盘抽奖** - 自动参与会员中心转盘抽奖
 
 ### 🔧 通用
 - ✅ **多种推送渠道** - PushPlus 微信推送、Bark iOS 推送
@@ -75,7 +73,6 @@
 
 | Variable | 说明 |
 |----------|------|
-| `SMZDM_TASK_TESTING` | 设为 `yes` 启用全民众测能量值任务 |
 | `SMZDM_COMMENT` | 评论任务默认文案（需 >10 字符） |
 | `SMZDM_CROWD_SILVER_5` | 设为 `yes` 启用 5 碎银子抽奖 |
 
@@ -168,9 +165,7 @@ NINEBOT_NAME           = 我的九号
 │   ├── bot.js                  # SMZDM 基类 + 签名 + 请求
 │   ├── library_task.js         # 任务逻辑库
 │   ├── smzdm_checkin.js        # 每日签到
-│   ├── smzdm_task.js           # 每日任务
-│   ├── smzdm_testing.js        # 全民众测能量值
-│   └── smzdm_lottery.js        # 转盘抽奖
+│   └── smzdm_task.js           # 每日任务
 ├── package.json                 # 依赖配置
 ├── GITHUB_SETUP.md              # GitHub Actions 配置说明
 ├── .env.example                 # 环境变量示例
@@ -196,7 +191,6 @@ NINEBOT_NAME           = 我的九号
 - **Cookie 认证+MD5 签名** - 基于 `got` 库、MD5 参数签名
 - **多账号支持** - `&` 分隔 Cookie 实现多账号
 - **任务全覆盖** - 浏览/分享/点赞/收藏/评论/关注/抽奖 10+ 种任务类型
-- **全民众测** - 支持能量值任务和必中券信息查询
 
 ### 🔧 通用
 - **零冗余依赖** - 仅依赖 `axios`、`dotenv`、`got`、`crypto-js`、`tough-cookie`

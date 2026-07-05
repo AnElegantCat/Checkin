@@ -34,7 +34,6 @@ jobs:
         TZ: Asia/Shanghai
         SMZDM_COOKIE: ${{ secrets.SMZDM_COOKIE }}
         SMZDM_SK: ${{ secrets.SMZDM_SK }}
-        SMZDM_TASK_TESTING: ${{ vars.SMZDM_TASK_TESTING }}
         SMZDM_COMMENT: ${{ vars.SMZDM_COMMENT }}
         SMZDM_CROWD_SILVER_5: ${{ vars.SMZDM_CROWD_SILVER_5 }}
         PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
@@ -43,5 +42,3 @@ jobs:
         node smzdm/smzdm_checkin.js
         echo "===== 什么值得买每日任务 ====="
         node smzdm/smzdm_task.js
-        echo "===== 什么值得买全民众测能量值 ====="
-        node smzdm/smzdm_testing.js
