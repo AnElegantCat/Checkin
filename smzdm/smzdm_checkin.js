@@ -285,7 +285,8 @@ function getDeviceId(cookie) {
     notifyContent += sep + msg + '\n';
 
     // 判定以签到本身为准：奖励/查询类小失败只留在日志，不打扰
-    if (!msg.includes('签到成功')) {
+    // 重复运行时接口报"已签到"也算成功（定时任务可能被 GitHub 补跑两次）
+    if (!msg.includes('签到成功') && !msg.includes('已签到')) {
       failures.push(cookies.length > 1 ? `账号${i + 1}: ${msg.trim()}` : msg.trim());
     }
   }
