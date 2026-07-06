@@ -7,9 +7,7 @@
     "scripts": {
         "start": "node sign_ninebot.js",
         "smzdm:checkin": "node smzdm/smzdm_checkin.js",
-        "smzdm:task": "node smzdm/smzdm_task.js",
-        "smzdm:testing": "node smzdm/smzdm_testing.js",
-        "smzdm:lottery": "node smzdm/smzdm_lottery.js"
+        "smzdm:task": "node smzdm/smzdm_task.js"
     },
     "dependencies": {
         "axios": "^1.18.1",

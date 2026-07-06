@@ -1,6 +1,6 @@
 # Checkin - 九号出行 & 什么值得买 自动签到
 
-🛴 **九号出行（Ninebot）自动签到** + 🛒 **什么值得买（SMZDM）自动签到** - 基于 GitHub Actions 实现每日自动签到 + 任务/盲盒/抽奖，支持多账号、多推送渠道。
+🛴 **九号出行（Ninebot）自动签到** + 🛒 **什么值得买（SMZDM）自动签到** - 基于 GitHub Actions 实现每日自动签到、九号盲盒和值得买每日任务，支持多账号、多推送渠道。
 
 [![Ninebot Actions](https://github.com/AnElegantCat/Checkin/actions/workflows/sign.yml/badge.svg)](https://github.com/AnElegantCat/Checkin/actions/workflows/sign.yml)
 [![SMZDM Actions](https://github.com/AnElegantCat/Checkin/actions/workflows/smzdm.yml/badge.svg)](https://github.com/AnElegantCat/Checkin/actions/workflows/smzdm.yml)
@@ -18,7 +18,7 @@
 
 ### 🛒 什么值得买 (SMZDM)
 - ✅ **每日签到** - 自动签到获取金币、碎银、经验
-- ✅ **每日任务** - 自动完成浏览文章、分享、点赞、收藏、评论、关注、抽奖等任务
+- ✅ **每日任务** - 自动完成浏览文章、分享、点赞、收藏、评论、关注等任务
 
 ### 🔧 通用
 - ✅ **多种推送渠道** - PushPlus 微信推送、Bark iOS 推送
@@ -142,7 +142,7 @@ NINEBOT_NAME           = 我的九号
 
 | 工作流 | 触发时间 | 说明 |
 |--------|---------|------|
-| **九号出行** (`sign.yml`) | 每天 **北京时间 07:37** | UTC 23:37，脚本随机延迟 0-10 分钟 |
+| **九号出行** (`sign.yml`) | 每天 **北京时间 06:05** | UTC 22:05，脚本随机延迟 0-10 分钟，预留 GitHub 排队时间 |
 | **什么值得买** (`smzdm.yml`) | 每天 **北京时间 09:37** | UTC 01:37，错开避免 Runner 排队 |
 
 修改编辑 `.github/workflows/sign.yml` 或 `.github/workflows/smzdm.yml`。

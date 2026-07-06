@@ -8,6 +8,7 @@ cron: 20 14 * * *
 const Env = require('./env');
 const { requestApi, removeTags, getEnvCookies, wait } = require('./bot');
 const { SmzdmTaskBot } = require('./library_task');
+const { notifyFail } = require('./notify');
 
 const $ = new Env('smzdm 每日任务');
 
@@ -162,16 +163,18 @@ class SmzdmNormalTaskBot extends SmzdmTaskBot {
 }
 
 !(async () => {
-  $.checkSecrets(['SMZDM_COOKIE']);
   const cookies = getEnvCookies();
 
   if (cookies === false) {
     $.log('\n请先设置 SMZDM_COOKIE 环境变量');
+    process.exitCode = 1;
+    await notifyFail('什么值得买每日任务失败', 'SMZDM_COOKIE 未配置或已丢失');
 
     return;
   }
 
   let notifyContent = '';
+  const failures = [];
 
   for (let i = 0; i < cookies.length; i++) {
     const cookie = cookies[i];
@@ -194,11 +197,22 @@ class SmzdmNormalTaskBot extends SmzdmTaskBot {
     const msg = await bot.run();
 
     notifyContent += `${sep}${msg}\n`;
+
+    if (msg.includes('❌')) {
+      failures.push(cookies.length > 1 ? `账号${i + 1}: ${msg.trim()}` : msg.trim());
+    }
+  }
+
+  if (failures.length > 0) {
+    process.exitCode = 1;
+    await notifyFail('什么值得买每日任务失败', failures.join('\n'));
   }
 
   $.log();
-})().catch((e) => {
-  $.log('', `❌ ${$.name}, 失败! 原因: ${e}!`, '')
+})().catch(async (e) => {
+  $.log('', `❌ ${$.name}, 失败! 原因: ${e}!`, '');
+  process.exitCode = 1;
+  await notifyFail('什么值得买每日任务失败', `脚本异常: ${e}`);
 }).finally(() => {
   $.done();
 });

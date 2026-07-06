@@ -2,7 +2,7 @@ name: 什么值得买自动签到
 
 on:
   schedule:
-    # 每天北京时间 09:37 运行 (UTC 01:37)，与 Ninebot 的 07:37 错开
+    # 每天北京时间 09:37 运行 (UTC 01:37)，与 Ninebot 的 06:05 错开
     # 避开整点：GitHub Actions 整点任务排队严重，容易大幅延迟甚至被跳过
     # 2026-07-05 曾因风控 11111 暂停；换用 App 抓包 cookie（自带 device_id，
     # 脚本自动推导 sk）后 dispatch 验证签到成功，恢复调度
@@ -37,6 +37,11 @@ jobs:
         SMZDM_COMMENT: ${{ vars.SMZDM_COMMENT }}
         SMZDM_CROWD_SILVER_5: ${{ vars.SMZDM_CROWD_SILVER_5 }}
         PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        BARK_KEY: ${{ secrets.BARK_KEY }}
+        BARK_URL: ${{ secrets.BARK_URL }}
+        BARK_GROUP: ${{ secrets.BARK_GROUP }}
+        BARK_ICON: ${{ secrets.BARK_ICON }}
+        BARK_SOUND: ${{ secrets.BARK_SOUND }}
       run: |
         echo "===== 什么值得买签到 ====="
         node smzdm/smzdm_checkin.js
