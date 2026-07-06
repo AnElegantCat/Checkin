@@ -1,17 +1,18 @@
 const got = require('got');
 
-// 失败才推送（静默成功）；正文只放失败原因，账号名/时间等渠道自带信息不重复
-const notifyFail = async (title, content) => {
-  const message = String(content).slice(0, 500);
+const notifyResult = async (title, content) => {
+  const message = String(content).slice(0, 1000);
   const results = await Promise.all([
     notifyPushPlus(title, message),
     notifyBark(title, message)
   ]);
 
   if (results.every(result => result.skipped)) {
-    console.log('未配置 PUSHPLUS_TOKEN 或 BARK_KEY，跳过失败推送');
+    console.log('未配置 PUSHPLUS_TOKEN 或 BARK_KEY，跳过推送');
   }
 };
+
+const notifyFail = notifyResult;
 
 const notifyPushPlus = async (title, content) => {
   const token = process.env.PUSHPLUS_TOKEN;
@@ -30,17 +31,17 @@ const notifyPushPlus = async (title, content) => {
     });
 
     if (response.body && response.body.code === 200) {
-      console.log('PushPlus 失败推送已发送');
+      console.log('PushPlus 推送已发送');
       return { success: true };
     }
     else {
-      console.log(`PushPlus 失败推送异常: ${JSON.stringify(response.body)}`);
+      console.log(`PushPlus 推送异常: ${JSON.stringify(response.body)}`);
       return { success: false };
     }
   }
   catch (e) {
     // 推送本身失败不再抛出，避免掩盖签到的退出码
-    console.log(`PushPlus 失败推送异常: ${e}`);
+    console.log(`PushPlus 推送异常: ${e}`);
     return { success: false };
   }
 };
@@ -63,17 +64,17 @@ const notifyBark = async (title, content) => {
     });
 
     if (response.body && response.body.code === 200) {
-      console.log('Bark 失败推送已发送');
+      console.log('Bark 推送已发送');
       return { success: true };
     }
 
-    console.log(`Bark 失败推送异常: ${JSON.stringify(response.body)}`);
+    console.log(`Bark 推送异常: ${JSON.stringify(response.body)}`);
     return { success: false };
   }
   catch (e) {
-    console.log(`Bark 失败推送异常: ${e}`);
+    console.log(`Bark 推送异常: ${e}`);
     return { success: false };
   }
 };
 
-module.exports = { notifyFail };
+module.exports = { notifyResult, notifyFail };

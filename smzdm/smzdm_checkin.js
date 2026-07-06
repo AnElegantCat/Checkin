@@ -7,7 +7,7 @@ cron: 10 8 * * *
 
 const Env = require('./env');
 const { SmzdmBot, requestApi, removeTags, getEnvCookies, wait } = require('./bot');
-const { notifyFail } = require('./notify');
+const { notifyResult, notifyFail } = require('./notify');
 const CryptoJS = require('crypto-js');
 
 const $ = new Env('smzdm 签到');
@@ -231,13 +231,41 @@ function getDeviceId(cookie) {
   return random32();
 }
 
+function buildNotifyContent(messages, cookiesLength) {
+  if (messages.length === 0) {
+    return '未执行任何账号';
+  }
+
+  if (cookiesLength === 1) {
+    return formatNotifyMessage(messages[0].msg);
+  }
+
+  return messages
+    .map(item => `账号${item.index + 1}:\n${formatNotifyMessage(item.msg)}`)
+    .join('\n\n');
+}
+
+function formatNotifyMessage(msg) {
+  const content = msg.trim();
+
+  if (content.includes('签到成功')) {
+    return `签到结果: 成功\n本次获得:\n${content}`;
+  }
+
+  if (content.includes('已签到')) {
+    return `签到结果: 今日已签到\n详情:\n${content}`;
+  }
+
+  return content;
+}
+
 !(async () => {
   const cookies = getEnvCookies();
 
   if (cookies === false) {
     $.log('\n请先设置 SMZDM_COOKIE 环境变量');
     process.exitCode = 1;
-    await notifyFail('什么值得买签到失败', 'SMZDM_COOKIE 未配置或已丢失');
+    await notifyFail('SMZDM签到失败', 'SMZDM_COOKIE 未配置或已丢失');
 
     return;
   }
@@ -256,7 +284,7 @@ function getDeviceId(cookie) {
     }
   }
 
-  let notifyContent = '';
+  const accountMessages = [];
   const failures = [];
 
   for (let i = 0; i < cookies.length; i++) {
@@ -282,7 +310,7 @@ function getDeviceId(cookie) {
     const bot = new SmzdmCheckinBot(cookie, sk);
     const msg = await bot.run();
 
-    notifyContent += sep + msg + '\n';
+    accountMessages.push({ index: i, msg });
 
     // 判定以签到本身为准：奖励/查询类小失败只留在日志，不打扰
     // 重复运行时接口报"已签到"也算成功（定时任务可能被 GitHub 补跑两次）
@@ -293,14 +321,17 @@ function getDeviceId(cookie) {
 
   if (failures.length > 0) {
     process.exitCode = 1;
-    await notifyFail('什么值得买签到失败', failures.join('\n'));
+    await notifyFail('SMZDM签到失败', failures.join('\n'));
+  }
+  else {
+    await notifyResult('SMZDM签到成功', buildNotifyContent(accountMessages, cookies.length));
   }
 
   $.log();
 })().catch(async (e) => {
   $.log('', `❌ ${$.name}, 失败! 原因: ${e}!`, '');
   process.exitCode = 1;
-  await notifyFail('什么值得买签到失败', `脚本异常: ${e}`);
+  await notifyFail('SMZDM签到失败', `脚本异常: ${e}`);
 }).finally(() => {
   $.done();
 });
