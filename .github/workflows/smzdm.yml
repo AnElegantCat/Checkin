@@ -2,11 +2,11 @@ name: 什么值得买自动签到
 
 on:
   schedule:
-    # 每天北京时间 09:37 运行 (UTC 01:37)，与 Ninebot 的 06:05 错开
+    # 每天北京时间 01:37 运行 (UTC 前一日 17:37)，留出 6 小时以上缓冲，尽量控制在 08:00 前完成
     # 避开整点：GitHub Actions 整点任务排队严重，容易大幅延迟甚至被跳过
     # 2026-07-05 曾因风控 11111 暂停；换用 App 抓包 cookie（自带 device_id，
     # 脚本自动推导 sk）后 dispatch 验证签到成功，恢复调度
-    - cron: '37 1 * * *'
+    - cron: '37 17 * * *'
   workflow_dispatch:
 
 jobs:
