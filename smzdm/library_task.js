@@ -16,6 +16,9 @@ class SmzdmTaskBot extends SmzdmBot {
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
 
+      // 单个任务异常（如新出现未适配的 task_event_type、字段缺失）只跳过该任务，
+      // 不能中断本账号剩余任务，更不能冒泡中断后续账号
+      try {
       // 待领取任务
       if (task.task_status == '3') {
         this.$env.log(`领取[${task.task_name}]奖励:`);
@@ -107,6 +110,10 @@ class SmzdmTaskBot extends SmzdmBot {
             this.$env.log('🟡请设置 SMZDM_COMMENT 环境变量后才能做评论任务！');
           }
         }
+      }
+      } catch (e) {
+        this.$env.log(`任务[${(task && task.task_name) || i}]执行异常，跳过: ${e}`);
+        notifyMsg += `❌完成[${(task && task.task_name) || ''}]任务异常！请查看日志\n`;
       }
     }
 
@@ -1352,27 +1359,6 @@ class SmzdmTaskBot extends SmzdmBot {
       ...defaultObj,
       ...obj
     });
-  }
-
-  // 从栏目获取文章列表（不同接口）
-  async getArticleListFromLanmuOld(lanmuId, num = 1) {
-    const { isSuccess, data, response } = await requestApi(`https://article-api.smzdm.com/column/get_article_list/${lanmuId}`, {
-      headers: this.getHeaders(),
-      data: {
-        offset: 0,
-        limit: 20,
-        sort: 'new',
-        filter: ''
-      }
-    });
-
-    if (isSuccess) {
-      return data.data.rows.slice(0, num);
-    }
-    else {
-      this.$env.log(`从栏目获取文章失败: ${response}`);
-      return [];
-    }
   }
 }
 

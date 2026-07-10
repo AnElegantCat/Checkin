@@ -20,11 +20,23 @@ class SmzdmCheckinBot extends SmzdmBot {
   }
 
   async run() {
+    // 签到本身决定成败；奖励/额外奖励为次要步骤，其结构漂移导致的异常
+    // 不得淹没已成功的签到（否则会误报失败并置退出码 1）
     const { msg: msg1 } = await this.checkin();
 
-    const { msg: msg2 } = await this.allReward();
+    let msg2 = '';
+    try {
+      ({ msg: msg2 } = await this.allReward());
+    } catch (e) {
+      $.log(`查询奖励异常（不影响签到结果）: ${e}`);
+    }
 
-    const { msg: msg3 } = await this.extraReward();
+    let msg3 = '';
+    try {
+      ({ msg: msg3 } = await this.extraReward());
+    } catch (e) {
+      $.log(`额外奖励异常（不影响签到结果）: ${e}`);
+    }
 
     return `${msg1}${msg2}${msg3}`;
   }
@@ -161,9 +173,10 @@ class SmzdmCheckinBot extends SmzdmBot {
     });
 
     if (isSuccess) {
-      const result = data.data.rows.find(item => item.cell_type == '18001');
+      // 接口结构漂移 / 当天无该模块时 find 可能返回 undefined，容错取值
+      const result = data?.data?.rows?.find(item => item.cell_type == '18001');
 
-      return result.cell_data.checkin_continue.continue_checkin_reward_show;
+      return result?.cell_data?.checkin_continue?.continue_checkin_reward_show ?? false;
     }
     else {
       $.log(`查询是否有额外奖励失败！${response}`);
@@ -308,7 +321,14 @@ function formatNotifyMessage(msg) {
     $.log(sep);
 
     const bot = new SmzdmCheckinBot(cookie, sk);
-    const msg = await bot.run();
+    let msg = '';
+    try {
+      msg = await bot.run();
+    } catch (e) {
+      // 单账号异常不影响后续账号
+      $.log(`账号${i + 1} 签到执行异常: ${e}`);
+      msg = `签到失败！脚本异常: ${e}`;
+    }
 
     accountMessages.push({ index: i, msg });
 

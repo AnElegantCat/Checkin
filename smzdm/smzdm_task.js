@@ -193,7 +193,14 @@ class SmzdmNormalTaskBot extends SmzdmTaskBot {
     $.log(sep);
 
     const bot = new SmzdmNormalTaskBot(cookie);
-    const msg = await bot.run();
+    let msg = '';
+    try {
+      msg = await bot.run();
+    } catch (e) {
+      // 单账号异常不影响后续账号
+      $.log(`账号${i + 1} 任务执行异常: ${e}`);
+      msg = `❌账号异常: ${e}`;
+    }
 
     if (msg.includes('❌')) {
       failures.push(cookies.length > 1 ? `账号${i + 1}: ${msg.trim()}` : msg.trim());

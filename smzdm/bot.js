@@ -38,6 +38,15 @@ const parseJSON = (str) => {
 
 const removeTags = (str) => str.replace(/<[^<]+?>/g, '');
 
+// debug 日志脱敏：Actions 日志对协作者可见，不能把完整 Cookie 明文打出去
+const debugStringifyOptions = (gotOptions) => {
+  const safe = { ...gotOptions };
+  if (safe.headers && safe.headers.Cookie) {
+    safe.headers = { ...safe.headers, Cookie: '***REDACTED***' };
+  }
+  return JSON.stringify(safe, null, 2);
+};
+
 // 添加公共参数并签名数据
 const signFormData = (data) => {
   const newData = {
@@ -50,7 +59,7 @@ const signFormData = (data) => {
   };
 
   const keys = Object.keys(newData).filter(key => newData[key] !== '').sort();
-  const signData = keys.map(key => `${key}=${String(newData[key]).replace(/\s+/, '')}`).join('&');
+  const signData = keys.map(key => `${key}=${String(newData[key]).replace(/\s+/g, '')}`).join('&');
   const sign = crypto.createHash('md5').update(`${signData}&key=${SIGN_KEY}`).digest('hex').toUpperCase();
 
   return {
@@ -80,13 +89,24 @@ const requestApi = async (url, inputOptions = {}) => {
   const gotOptions = {
     method: options.method.toUpperCase(),
     headers: options.headers,
+    // got@11 默认无请求超时；接口挂起会一直卡到 workflow 30min 被强杀
+    timeout: {
+      request: 15000
+    },
     retry: {
       limit: 2,
       methods: [
         'GET',
         'POST'
       ],
+      // 恢复对限流/网关瞬时错误的重试（smzdm 风控/限流常见 429/5xx）
       statusCodes: [
+        408,
+        429,
+        500,
+        502,
+        503,
+        504
       ],
       errorCodes: [
         'ECONNRESET',
@@ -109,7 +129,7 @@ const requestApi = async (url, inputOptions = {}) => {
       console.log('------------------------');
       console.log(url);
       console.log('------------------------');
-      console.log(JSON.stringify(gotOptions, null, 2));
+      console.log(debugStringifyOptions(gotOptions));
       console.log('------------------------');
       console.log(options.parseJSON === false ? response.body : JSON.stringify(data, null, 2));
       console.log('------------------------');
@@ -125,7 +145,7 @@ const requestApi = async (url, inputOptions = {}) => {
       console.log('------------------------');
       console.log(url);
       console.log('------------------------');
-      console.log(JSON.stringify(gotOptions, null, 2));
+      console.log(debugStringifyOptions(gotOptions));
       console.log('------------------------');
       console.log(error);
       console.log('------------------------');
@@ -185,7 +205,8 @@ class SmzdmBot {
   constructor(cookie) {
     this.cookie = cookie.trim();
 
-    const match = this.cookie.match(/sess=(.*?);/);
+    // 兼容 cookie 末位无尾随分号的情况（原 /sess=(.*?);/ 会漏取，导致 token 为空）
+    const match = this.cookie.match(/sess=([^;]*)/);
     this.token = match ? match[1] : '';
 
     // 处理 cookie
