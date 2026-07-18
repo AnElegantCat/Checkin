@@ -677,8 +677,8 @@ async function init() {
             }
         }
         
-        // 构建简洁的推送消息
-        const title = "九号出行签到结果";
+        // 构建简洁的推送消息（标题直出整体结果，无需点开正文即可判断）
+        const title = successCount === accounts.length ? "九号出行签到成功" : "九号出行签到失败";
         const message = results.map(r => {
             const emoji = r.signSuccess ? "✅" : "❌";
             const statusText = r.isSignedToday ? "今日已签到" : (r.signSuccess ? "签到成功 🎉" : "签到失败");
